@@ -1,5 +1,5 @@
 /**
- * locos global styles — Story 1.1 token + component subset.
+ * locos global styles — Story 1.1 v3 token + component subset.
  *
  * Only the tokens and component classes needed by the login surface ship
  * here. Future stories (1.x, 3.x, 5.x) extend this file with their own
@@ -178,87 +178,6 @@ button {
 }
 
 .input[aria-invalid='true'] {
-  box-shadow: 0 0 0 1.5px var(--color-error);
-  border-color: transparent;
-}
-
-/* ----------------------------------------------------------------------------
- * Phone input — +84 prefix locked, editable national number after.
- * --------------------------------------------------------------------------*/
-.phone-input {
-  display: flex;
-  align-items: stretch;
-  border: 1px solid var(--color-outline);
-  border-radius: var(--rounded-md);
-  overflow: hidden;
-  background: var(--color-surface);
-}
-
-.phone-input:focus-within {
-  box-shadow: 0 0 0 1.5px var(--color-accent);
-  border-color: transparent;
-}
-
-.phone-input__prefix {
-  display: flex;
-  align-items: center;
-  padding: 0 var(--space-3);
-  background: var(--color-surface-dim);
-  color: var(--color-ink-secondary);
-  font-size: var(--text-body);
-  border-right: 1px solid var(--color-outline);
-  user-select: none;
-  cursor: default;
-}
-
-.phone-input__national {
-  flex: 1;
-  border: none;
-  background: transparent;
-  padding: 0 var(--space-3);
-  height: 44px;
-  font-size: var(--text-body);
-  line-height: var(--line-body);
-  color: var(--color-ink-primary);
-  outline: none;
-  font-family: inherit;
-}
-
-.phone-input__national::placeholder {
-  color: var(--color-ink-tertiary);
-}
-
-/* ----------------------------------------------------------------------------
- * OTP cell — six 48×56px cells, paste-anywhere.
- * --------------------------------------------------------------------------*/
-.otp-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 48px);
-  gap: var(--space-2);
-  justify-content: center;
-}
-
-.otp-cell {
-  width: 48px;
-  height: 56px;
-  text-align: center;
-  font-family: var(--font-body);
-  font-size: var(--text-title);
-  font-weight: 600;
-  background: var(--color-surface);
-  color: var(--color-ink-primary);
-  border: 1px solid var(--color-outline);
-  border-radius: var(--rounded-md);
-  outline: none;
-  caret-color: var(--color-accent);
-}
-
-.otp-cell:focus {
-  box-shadow: 0 0 0 1.5px var(--color-accent);
-  border-color: transparent;
-}
-
-.otp-cell[aria-invalid='true'] {
   box-shadow: 0 0 0 1.5px var(--color-error);
   border-color: transparent;
 }

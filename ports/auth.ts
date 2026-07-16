@@ -1,59 +1,23 @@
 /**
  * AuthPort — AD-7.
  *
- * Clerk owns identity; locos stores only `clerk_user_id`. This port is the
- * only contract the domain sees for authentication. `core/` never imports
- * from `@clerk/nextjs` — it depends on this interface only.
- *
- * Phone numbers, OTP codes, and OTP TTLs flow through Clerk's vendor and are
- * NEVER stored in locos. The port's methods accept a `PhoneInput` shape
- * (country code + national number) and return discriminated results so
- * callers can act on outcomes without touching Clerk's types.
+ * Story 1.1 v3: Clerk owns identity via the `username` + password strategy.
+ * Locos stores only `clerk_user_id`; no passwords, OTPs, email addresses, or
+ * phone numbers ever touch the locos DB. This port is the only contract the
+ * domain sees for authentication. `core/` never imports from
+ * `@clerk/nextjs` — it depends on this interface only.
  *
  * Split between server and client:
- *   - `getCurrentShop`, `signOut` are SERVER-side (used in route handlers,
- *     server components, server actions).
- *   - `requestOtp`, `verifyOtp` are CLIENT-side (the Clerk v6 SDK drives
- *     phone-code flows through the `useSignIn()` hook; the active SignIn
- *     object lives on the client). See `ports/sign-in.ts`.
+ *   - Server-side: `getCurrentShop`, `signOut` — used in route handlers,
+ *     server components, server actions. Implemented in
+ *     `adapters/clerk/auth.ts`.
+ *   - Client-side: `signIn` — the Clerk v6 SDK drives the `username`
+ *     strategy through the `useSignIn()` hook; the active SignIn object
+ *     lives on the client. See `ports/sign-in.ts` and
+ *     `adapters/clerk/sign-in-client.ts`.
  */
 
-import { z } from 'zod';
 import type { Shop } from '@/core/shop/shop';
-
-export const VIETNAM_COUNTRY_CODE = '+84' as const;
-export const VIETNAM_MOBILE_NATIONAL_DIGITS = 9;
-
-export const phoneSchema = z.object({
-  countryCode: z.literal(VIETNAM_COUNTRY_CODE),
-  nationalNumber: z
-    .string()
-    .regex(/^[35789][0-9]{8}$/, 'nationalNumber must be a 9-digit Vietnam mobile number'),
-});
-
-export type PhoneInput = z.infer<typeof phoneSchema>;
-
-export function normalizeVietnamNationalNumber(raw: string): string {
-  const compact = raw.trim().replace(/[\s\-().]/g, '');
-  const digits = compact.replace(/[^0-9]/g, '');
-  let national = digits;
-
-  if (compact.startsWith('+84')) {
-    national = digits.slice(2);
-  } else if (digits.startsWith('84')) {
-    national = digits.slice(2);
-  }
-
-  if (national.length === 10 && national.startsWith('0')) {
-    national = national.slice(1);
-  }
-
-  return national;
-}
-
-export function toVietnamE164(phone: PhoneInput): string {
-  return `${phone.countryCode}${phone.nationalNumber}`;
-}
 
 export interface AuthPort {
   /**

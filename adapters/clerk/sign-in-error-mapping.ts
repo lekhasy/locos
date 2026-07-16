@@ -5,40 +5,39 @@
  * tested without mocking `@clerk/nextjs`. `sign-in-client.ts` imports from
  * here.
  *
- * Mapping table:
- *   - phone_number_not_provisioned → not_provisioned
- *   - form_param_format_invalid → invalid_identifier
- *   - invalid_code / verification_failed → invalid_code
- *   - expired_code → expired
- *   - everything else → null (caller decides the fallback reason)
+ * Story 1.1 v3 (username + password on Clerk `username` strategy):
+ *   - form_password_incorrect         → invalid_credentials
+ *   - form_identifier_not_found       → invalid_credentials
+ *   - form_identifier_exists          → invalid_credentials
+ *   - form_param_format_invalid       → invalid_credentials
+ *   - user_locked                     → invalid_credentials
+ *   - verification_failed             → invalid_credentials
+ *   - everything else                 → null (caller decides fallback)
  *
- * Never log the phone, OTP code, or Clerk error message verbatim. The
- * logger's redact paths (`adapters/logger.ts`) catch phone/code fields
- * defensively, but this module is the primary control.
+ * All known authentication failures collapse to `invalid_credentials` so the
+ * UI can show a single generic localized message ("Sai tên đăng nhập hoặc mật
+ * khẩu") — we never reveal whether the username or the password was wrong.
+ *
+ * Never log the password, username, or Clerk error message verbatim. The
+ * logger's redact paths (`adapters/logger.ts`) catch password fields as
+ * defense-in-depth, but this module is the primary control.
  */
 
-import type {
-  OtpRequestResult,
-  OtpVerifyResult,
-} from '@/ports/sign-in';
+import type { SignInResult } from '@/ports/sign-in';
 
-export type RequestReason = Extract<OtpRequestResult, { ok: false }>['reason'];
-export type VerifyReason = Extract<OtpVerifyResult, { ok: false }>['reason'];
+export type SignInReason = Extract<SignInResult, { ok: false }>['reason'];
 
-export function mapSignInCode(code: string): RequestReason | VerifyReason | null {
-  switch (code) {
-    case 'phone_number_not_provisioned':
-      return 'not_provisioned';
-    case 'form_param_format_invalid':
-      return 'invalid_identifier';
-    case 'invalid_code':
-    case 'verification_failed':
-      return 'invalid_code';
-    case 'expired_code':
-      return 'expired';
-    default:
-      return null;
-  }
+const USERNAME_PASSWORD_ERROR_MAPPING: Record<string, SignInReason> = {
+  form_password_incorrect: 'invalid_credentials',
+  form_identifier_not_found: 'invalid_credentials',
+  form_identifier_exists: 'invalid_credentials',
+  form_param_format_invalid: 'invalid_credentials',
+  user_locked: 'invalid_credentials',
+  verification_failed: 'invalid_credentials',
+};
+
+export function mapSignInCode(code: string): SignInReason | null {
+  return USERNAME_PASSWORD_ERROR_MAPPING[code] ?? null;
 }
 
 export function extractClerkCode(err: unknown): string | null {

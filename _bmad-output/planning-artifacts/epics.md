@@ -66,14 +66,14 @@ This document provides the complete epic and story breakdown for locos, decompos
 - **AR-4 — Content-addressable, shop-namespaced storage:** Storage path shape `originals/{shopId}/{sha256}.{ext}` and `generated/{shopId}/{sha256}.{ext}`. Originals immutable; regen inserts a new row, never mutates. Owner-initiated delete = tombstone-on-row.
 - **AR-5 — Multi-tenant from day one:** Every repository method takes `shopId` as a required argument; every Postgres query has `WHERE shop_id = $1`.
 - **AR-6 — Generation job idempotency:** `jobKey = hash(shopId, productId, imageIndex, inputFingerprint)` enforced via Graphile Worker's `job_key` column.
-- **AR-7 — Auth boundary:** Clerk owns identity; locos stores only `clerk_user_id`. Phone numbers and OTP codes never stored in locos.
+- **AR-7 — Auth boundary:** Clerk owns identity via the username+password strategy; locos stores only `clerk_user_id`. No passwords, OTP codes, email addresses, or phone numbers are persisted in locos; no two-step auth UI exists in `/app`. Sales reps provision accounts out-of-band via Clerk dashboard.
 - **AR-8 — Encrypted FB Page tokens:** Stored encrypted-at-rest (libsodium secretbox); caller accesses via callback `withDecryptedToken(shopId, pageId, fn)` — decrypted reference never escapes the closure.
 - **AR-9 — Cross-unit atomic writes:** Multi-row writes visible to another unit (Next.js ↔ worker) execute inside a single Drizzle transaction. Transient third-party failures emit a retry surface (logged event + UI affordance). `publish_succeeded` only after FB API confirms AND locator persisted in same transaction.
 - **AR-10 — Worker-job boundary:** First statement of every worker job handler is `verifyShopActive(shopId)`; exits with `JobError('shop_inactive')` otherwise. Per-job Zod schema for job arguments.
 - **AR-11 — FB publish state machine:** `publish_attempt` row written in `state='pending'` before API call → `succeeded` with post id on success → `failed` on permanent error → `unknown` if API call neither succeeded nor definitively failed. `unknown` rows visible to ops; reconciliation strategy deferred.
-- **AR-12 — Operator-only account provisioning (DEFERRED to hosting phase):** No self-service signup in application code. Shop row created only by locos-team internal tool from an out-of-band provisioning script. *For local dev, the dev seed script creates the dev shop directly.*
+- **AR-12 — Sales-rep-only account provisioning (no self-signup):** The locos app contains no signup surface, no public signup endpoint, no public surface that accepts new accounts. Each shop owner account is created by a sales rep (Clerk user via Clerk dashboard) and the matching locos `shop` row is created out-of-band; the rep hands credentials to the owner via Zalo or in person. *For local dev, the dev seed script creates the dev shop row directly and pairs it with a Clerk dev user.*
 - **AR-13 — Counter-metric + success-metric event emission:** Every write path logs the events that feed PRD §3 metrics (`shop_login`, `product_created`, `generation_started`, `generation_completed`, `generation_failed`, `regeneration_requested`, `publish_attempted`, `publish_succeeded`, `publish_failed`, `reconnect_required`, `product_sold_out_toggled`). Never logs PII or token bytes. *Local-only: events log to stdout + local file. Production log scrape is deferred.*
-- **AR-14 — Stack:** Node 24 LTS, Next.js 15.x App Router, Postgres 17, Drizzle, Graphile Worker, Clerk, eSMS.vn + Twilio Verify, Gemini 3 Pro, FASHN v1.6 via fal.ai, Facebook Graph v25.0, local filesystem storage. *Hosting layer (Caddy TLS, systemd units, host secrets) deferred.*
+- **AR-14 — Stack:** Node 24 LTS, Next.js 15.x App Router, Postgres 17, Drizzle, Graphile Worker, Clerk (username+password strategy), Gemini 3 Pro, FASHN v1.6 via fal.ai, Facebook Graph v25.0, local filesystem storage. No SMS provider — no OTP of any kind. *Hosting layer (Caddy TLS, systemd units, host secrets) deferred.*
 
 ### UX Design Requirements
 
@@ -85,8 +85,8 @@ This document provides the complete epic and story breakdown for locos, decompos
 - **UX-DR4 — Catalog grid breakpoints:** 1 column < 360px; 2 columns at ≥ 360px; 3 columns at ≥ 720px. Never more than 3 columns.
 - **UX-DR5 — Button components:** Implement `button-primary` (solid accent, 44px min), `button-secondary` (1px outline), `button-text` (no border, accent text). All text in Vietnamese, noun-first phrasing, no exclamation marks, no emoji.
 - **UX-DR6 — Input components:** Implement `input`, `textarea` (auto-grow), `price-input` (numeric font, right-aligned). Focus = 1.5px accent ring, not border color change. 44px height. Max-length enforced for title (80) and description (500).
-- **UX-DR7 — Phone input:** `+84` prefix locked (label-associated, not editable); editable national number is 9–10 digits; paste-anywhere; auto-submit when valid. ARIA: announces "Vietnam (+84)" + editable portion.
-- **UX-DR8 — OTP cell:** Six single-character cells, 48×56px, paste-anywhere; auto-advance; auto-submit when full. Live-region announcement "OTP received" on paste. 60s resend cooldown with countdown copy.
+- **UX-DR7 — Username field:** Single-line input, Vietnamese label "Tên đăng nhập". Min 3 / max 32 chars; allowed characters: a-z, 0-9, `_`, `-`. Autocomplete `username`. Paste-anywhere. ARIA: `aria-label="Tên đăng nhập"` on the input.
+- **UX-DR8 — Password field:** Single-line input with masked entry, Vietnamese label "Mật khẩu". Min 8 / max 128 chars. Autocomplete `current-password`. Toggle visibility with a small "Hiện/Ẩn" affordance (icon button, 44×44px tap target). ARIA: `aria-label="Mật khẩu"`.
 - **UX-DR9 — Photo tile:** Square `{colors.surface-dim}` tile, 4:5 aspect; dashed border when empty, solid when filled. Tap empty → camera on mobile / file picker on desktop. Tap filled → preview. Long-press filled → drag-reorder. Max 6 tiles. Direct camera access on phones (no library picker first).
 - **UX-DR10 — Product card:** Image top with `{rounded.lg}`; status pill bottom-left of image; title `{typography.title}` ellipsised 1 line; price `{typography.numeric}` right-aligned. Sold-out state shows overlay tint + pill.
 - **UX-DR11 — Generation tile:** Skeleton box with shimmer (opacity, not transform — safe to disable); descriptor below. Replaced inline when generation finishes.
@@ -108,7 +108,7 @@ This document provides the complete epic and story breakdown for locos, decompos
 ### FR Coverage Map
 
 - FR1: Epic 1 Story 0 — dev seed inserts a shop row (stand-in for the deferred operator provisioning tool)
-- FR2: Epic 1 Story 1 — phone + OTP login via Clerk
+- FR2: Epic 1 Story 1 — username + password login via Clerk (sales-rep-provisioned)
 - FR3: Epic 1 Story 2 — persistent session
 - FR4: Epic 1 Story 3 — provisioned-only enforcement
 - FR5: Epic 2 Story 1 — OAuth Page connection
@@ -136,12 +136,12 @@ This document provides the complete epic and story breakdown for locos, decompos
 ## Epic List
 
 ### Epic 1: Authentication & Account Access
-A provisioned shop owner can open locos, log in with their phone + OTP, and stay signed in across sessions. Unknown phone numbers cannot log in. The app runs locally on the developer's machine via a dev seed that stands in for the deferred operator provisioning tool.
+A provisioned shop owner can open locos, log in with their username + password, and stay signed in across sessions. Unknown usernames cannot log in; no self-signup surface exists in the app. Sales reps provision accounts out-of-band via Clerk dashboard; the locos app contains no signup form.
 
 **FRs covered:** FR1, FR2, FR3, FR4
 **NFRs:** NFR5 (security boundary)
-**ARs:** AR-1 (hexagonal), AR-5 (multi-tenant), AR-7 (Clerk-owned auth), AR-13 (logger + event emitter)
-**UX-DRs:** UX-DR1-4 (tokens, typography, layout, grid), UX-DR7 (phone-input), UX-DR8 (otp-cell), UX-DR20 (microcopy)
+**ARs:** AR-1 (hexagonal), AR-5 (multi-tenant), AR-7 (Clerk-owned auth), AR-12 (sales-rep-only provisioning), AR-13 (logger + event emitter)
+**UX-DRs:** UX-DR1-4 (tokens, typography, layout, grid), UX-DR6 (input), UX-DR7 (username field), UX-DR8 (password field), UX-DR20 (microcopy)
 
 ### Epic 2: Facebook Page Connection
 A logged-in shop owner can connect their Facebook Page once; the connection persists; if the token expires, they're prompted to reconnect before publishing to Facebook.
@@ -179,7 +179,7 @@ A shop owner can browse, edit, delete, and mark sold-out their products in the l
 
 ## Epic 1: Authentication & Account Access
 
-A provisioned shop owner can open locos on their local machine, log in with their phone + OTP, and stay signed in across sessions. Unknown phone numbers cannot log in. The dev seed substitutes for the deferred operator provisioning tool while running locally.
+A provisioned shop owner can open locos on their local machine, log in with their username + password, and stay signed in across sessions. Unknown usernames cannot log in. The dev seed creates the dev shop row directly while running locally.
 
 ### Story 1.0: Local development setup
 
@@ -199,34 +199,35 @@ So that I can run the app on my machine and log in as a known user.
 **And** pino logs go to stdout in dev
 **And** a README documents: starting Postgres locally, creating a Clerk dev app, getting FASHN/Gemini test keys, setting up a FB dev app, and the dev login phone number
 
-### Story 1.1: Phone + OTP login
+### Story 1.1: Username + password login (Clerk, sales-rep-provisioned)
 
 As a provisioned shop owner,
-I want to log in by entering my phone number and the OTP sent via SMS,
-So that I can access the locos catalog without remembering a password.
+I want to log in with the username and password my sales rep gave me,
+So that I can access the locos catalog without dealing with OTPs, magic links, or any phone-based step.
 
 **Acceptance Criteria:**
 
 **Given** an unauthenticated user opens the app
 **When** they land on `/login`
-**Then** they see a `phone-input` with `+84` prefix locked and an editable national number field
-**And** pasting a Vietnamese number (9–10 digits) auto-submits when valid
-**When** they submit a valid phone number
-**Then** Clerk sends an SMS via eSMS.vn (primary)
-**And** if eSMS.vn is unavailable, Clerk falls back to Twilio Verify without UI disruption
-**And** the user is taken to `/login/otp` with six `otp-cell` inputs
-**And** pasting a 6-digit code auto-fills all cells and auto-submits
-**And** a live region announces "OTP received" on paste
-**And** a 60-second resend cooldown shows an explicit countdown
-**When** the OTP is correct
-**Then** the user is authenticated and redirected to `/catalog`
+**Then** they see a single sign-in form with two fields — `Tên đăng nhập` (username) and `Mật khẩu` (password) — and a primary submit button labeled `Đăng nhập`
+**And** the form is the only auth-related UI on the page (no OTP cells, no phone-input, no "resend" affordance, no second step)
+**When** they submit a valid username + password
+**Then** Clerk authenticates via the `username` strategy and sets an HTTP-only session cookie
+**And** the user is authenticated and redirected to `/catalog`
 **And** a `shop_login` event is emitted (AR-13)
+**When** they submit invalid credentials
+**Then** the user sees a single generic localized error "Sai tên đăng nhập hoặc mật khẩu"
+**And** the error message **never** reveals whether the username or the password was the wrong one
+**And** submitting again from the same form is allowed without any cooldown
+**And** there is **no** `/login/otp` route and **no** two-step auth flow anywhere in `/app`
+
+**Out of scope (Story 1.1):** self-signup, password reset, first-login forced password change, any email/phone verification, any OTP flow.
 
 ### Story 1.2: Persistent session
 
 As an authenticated shop owner,
 I want my session to persist across visits,
-So that I do not have to re-enter the OTP every time I open the app.
+So that I do not have to re-enter my credentials every time I open the app.
 
 **Acceptance Criteria:**
 
@@ -241,17 +242,17 @@ So that I do not have to re-enter the OTP every time I open the app.
 ### Story 1.3: Provisioned-only enforcement
 
 As a locos operator,
-I want only provisioned phone numbers to be able to authenticate,
+I want only sales-rep-provisioned users to be able to authenticate,
 So that locos remains a closed tool for known customers and never becomes a public signup surface.
 
 **Acceptance Criteria:**
 
-**Given** a phone number that is NOT in the dev seed (or future operator-provisioned list)
-**When** the owner submits it for OTP login
-**Then** the OTP send fails at Clerk
-**And** the user sees "Số điện thoại chưa được đăng ký" with no path to self-register
-**And** a scan of the app routes reveals NO self-registration form, NO public signup endpoint, and NO public surface that accepts phone numbers for the purpose of account creation
-**And** the only way to add a phone number to the provisioned list is by running the dev seed (local) or the deferred operator provisioning tool (hosting phase)
+**Given** a Clerk user that exists but is NOT paired with a locos `shop` row matched by `clerk_user_id`
+**When** the user signs in successfully via Clerk's `username` strategy
+**Then** the app does **not** redirect them to `/catalog`
+**And** instead the user lands on `/pending-provisioning` with the message "Tài khoản của bạn chưa được liên kết với shop. Vui lòng liên hệ nhân viên kinh doanh để được hỗ trợ."
+**And** a scan of the app routes reveals NO self-registration form, NO public signup endpoint, and NO public surface that accepts new accounts or shop-bound identifiers
+**And** the only way to pair a Clerk user with a locos shop is by running the dev seed (local) or by the sales rep creating the shop row out-of-band through the internal provisioning script (hosting phase)
 
 ---
 

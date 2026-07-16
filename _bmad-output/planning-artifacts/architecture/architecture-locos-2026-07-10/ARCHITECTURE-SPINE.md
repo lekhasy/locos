@@ -120,11 +120,11 @@ No parent spine. The PRD binds here as the upstream requirement contract; UX bin
 - **Prevents:** accidentally paying FASHN twice when a user clicks "Regenerate" twice; two parallel regens corrupting a product's image set.
 - **Rule:** every `jobs/RegenerateImageJob` carries a `jobKey = hash(shopId, productId, imageIndex, inputFingerprint)`. Graphile Worker enforces single-instance-on-key via its `job_key` column. Two requests for the same key resolve to the same job, not two concurrent calls.
 
-### AD-7 — Auth boundary: Clerk owns identity; locos stores only `clerk_user_id`.
+### AD-7 — Auth boundary: Clerk owns identity via the username+password strategy; locos stores only `clerk_user_id`.
 
 - **Binds:** PRD FR1, FR2, FR3, FR4.
-- **Prevents:** locos shipping a phone-number-OTP flow that we have to maintain, audit, and harden; phone numbers in our DB adding GDPR/PDPA scope we don't yet own.
-- **Rule:** the `ports/Auth` interface exposes `getCurrentShop()`, `requestOtp(phone)`, `verifyOtp(phone, code)`, `getFacebookPageToken(shopId, pageId)`. The `adapters/Clerk` adapter implements all of them via Clerk. Locos's `shop` row stores `clerk_user_id` and **never** the phone number, the OTP code, or the OTP TTL. Phone numbers and OTPs flow through Clerk's vendor.
+- **Prevents:** locos shipping any OTP, email-verification, or phone-verification flow that we have to maintain, audit, and harden; the locos DB ever holding passwords, OTP codes, or any auth secret.
+- **Rule:** the `ports/Auth` interface exposes `signIn(identifier, password)`, `getCurrentShop()`, `signOut()`, and `getFacebookPageToken(shopId, pageId)`. The `adapters/Clerk` adapter implements all of them via Clerk's `username` strategy. Locos's `shop` row stores `clerk_user_id` and **never** a password, an OTP code, an email address, or a phone number. No two-step auth UI exists in `/app`; `/login` is a single username + password form. Sales reps provision accounts out-of-band via Clerk dashboard.
 
 ### AD-8 — FB Page access tokens are encrypted-at-rest and revocable.
 

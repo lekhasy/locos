@@ -2,7 +2,7 @@
 title: "PRD: locos"
 status: final
 created: 2026-07-10
-updated: 2026-07-10
+updated: 2026-07-16
 ---
 
 # PRD: locos — Phase 1 (Shop-Owner Posting Tool)
@@ -50,7 +50,7 @@ Accounts are **provisioned manually** by the locos team (these are known custome
 
 Chi runs a small dress shop in District 3. A new batch of linen dresses arrived this morning.
 
-1. Chi opens locos on her phone, enters her **phone number**, receives an **OTP** by SMS, enters it, and is logged in.
+1. Chi opens locos on her phone, enters her **username and password** (provisioned for her by the locos sales rep), and is logged in.
 2. (First time only) She connects her shop's **Facebook Page** by logging into Facebook and authorizing locos.
 3. She taps "New product," snaps/uploads **a few photos** of the dress, and types a rough description ("linen dress, beige, 350k").
 4. locos generates a **Vietnamese title, description, price, and images of a model wearing the dress.** She picks a **female model** in a casual style.
@@ -61,7 +61,7 @@ Chi runs a small dress shop in District 3. A new batch of linen dresses arrived 
 ## 5. Scope
 
 **In (Phase 1):**
-- Phone-OTP login against manually provisioned accounts.
+- Username-and-password login against manually provisioned accounts (no OTP, no email/phone verification).
 - One-time Facebook Page connection (token exchange).
 - Product creation: photo upload + rough description → AI-generated Vietnamese title, description, price, and model-wearing images.
 - Model-attribute selection; unlimited regeneration; owner editing before publish.
@@ -81,9 +81,9 @@ Chi runs a small dress shop in District 3. A new batch of linen dresses arrived 
 
 ### 6.1 Authentication & Accounts
 - **FR1.** The locos team can manually create a shop account; there is no public self-service signup.
-- **FR2.** A shop owner logs in by entering their phone number, receiving a one-time passcode (OTP) via SMS, and entering that OTP.
+- **FR2.** A shop owner logs in by entering a username and password (assigned out-of-band by the locos sales rep). There is no OTP, no email verification, and no phone verification.
 - **FR3.** A successful login establishes a persistent session so the owner is not forced to re-authenticate on every visit. `[ASSUMPTION: session stays valid for ~30 days of inactivity before re-auth is required; exact TTL to confirm.]`
-- **FR4.** Only accounts provisioned by the locos team can authenticate; an unknown phone number cannot log in or self-register.
+- **FR4.** Only accounts provisioned by the locos team can authenticate; an unknown username cannot log in, and there is no self-register path. Every Clerk user maps to exactly one row in the locos `shop` table by `clerk_user_id`.
 
 ### 6.2 Facebook Page Connection
 - **FR5.** A shop owner can connect one Facebook Page by logging into Facebook and authorizing locos; locos exchanges this for a Page access token and stores it for reuse.
@@ -120,7 +120,7 @@ Chi runs a small dress shop in District 3. A new batch of linen dresses arrived 
 - **NFR2 — Responsive web:** The app works on both desktop and mobile browsers, with mobile as a first-class experience (owners photograph products on their phones).
 - **NFR3 — Scale:** The system is designed to grow to the order of **thousands of shops**, each publishing roughly **one new product per day**. Design target for architecture to size against: **~5,000 active shops and ~5,000 product publishes/day** (plus generation traffic, which runs higher due to regenerations). `[ASSUMPTION: order-of-magnitude design band, not a committed SLA.]`
 - **NFR4 — Generation latency:** AI generation should keep the owner in the flow. Design target: **on the order of tens of seconds** per generation; treated as an architecture input rather than an open question. No hard cap is enforced in Phase 1.
-- **NFR5 — Security:** OTPs and stored Facebook Page tokens are handled and stored securely; tokens are scoped to the minimum permissions needed to post to a Page.
+- **NFR5 — Security:** Clerk owns credentials and tokens; locos stores only `clerk_user_id`. No auth secrets (passwords, OTPs, verification codes) are persisted in locos. Stored Facebook Page tokens are scoped to the minimum permissions needed to post to a Page.
 - **NFR6 — Reliability of publish:** Publishing is resilient — a transient Facebook or generation failure is surfaced and retryable, never silently dropped.
 - **NFR7 — Cost awareness:** AI image/text generation carries real per-use cost that the parent business absorbs; the system should make generation volume observable so cost can be monitored as usage grows. (No usage cap in Phase 1.)
 - **NFR8 — Data handling:** locos stores shop-owner phone numbers, Facebook Page tokens, generated product content (titles, descriptions, images, prices), and catalog records. Phase 1 needs a clear story for: (a) retention windows — long enough to support the product workflow, short enough that offboarding a shop doesn't leave their content behind; (b) deletion on shop-owner request and on account removal; (c) token revocation when a Page is disconnected. Specifics are owned by architecture; what the PRD needs from the design is that none of these paths are forgotten.
@@ -128,15 +128,15 @@ Chi runs a small dress shop in District 3. A new batch of linen dresses arrived 
 ## 8. Dependencies, Assumptions & Key Risks
 
 - **Facebook Graph API** access to post to Pages, including whatever app review / permissions (e.g., page management + content publishing) are required. This is an external gate that could affect timeline. `[ASSUMPTION: Facebook app approval is obtainable for this use case.]`
-- **SMS/OTP provider** capable of delivering to Vietnamese mobile numbers reliably.
+- **Clerk** identity service (free tier supports the username+password strategy used here; no email/phone verification is invoked).
 - **AI generation capability** for both Vietnamese marketing text and product-on-model imagery (provider/model choice is an architecture decision, not fixed here).
-- **Manual account-provisioning process** owned by the locos/parent-business team.
+- **Manual account-provisioning process** owned by the locos/parent-business team — sales rep creates each shop owner a Clerk user with a temp password and hands credentials out-of-band.
 
 **Key Phase-1 risks (named so they aren't silent):**
 - **Facebook app review delay or rejection** — pushes the entire FB-posting path. Mitigation: keep the locos catalog publishable without Facebook, so the tool still has standalone value while awaiting approval.
 - **AI provider outage or quality regression** — breaks the core generation flow. Mitigation: keep generations observable and retryable; regenerate is already the explicit UX.
 - **Vietnamese-text or on-model image quality does not clear the "good enough to publish" bar** — would show up as elevated CM1/CM2. Already instrumented via the counter-metrics.
-- **SMS deliverability gaps in Vietnam** — gates login. Mitigation: provider fallback and a manual-backup path for the locos team.
+- **Password handoff between sales rep and shop owner is an operational reality** — credentials flow out-of-band. Mitigation: documented secure-handling guidance in RUNBOOK; rep can issue a new temp password at any time.
 - **Facebook Graph API breaking changes** — would surface as CM3 step changes; resilience built in via NFR6.
 
 ## 9. Open Questions

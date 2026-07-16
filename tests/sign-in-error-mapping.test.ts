@@ -1,12 +1,14 @@
 /**
  * Unit tests for the Clerk → SignInPort error-mapping helpers.
  *
- * These are the boundary between Clerk's verbose error shapes (which can
- * include phone or OTP fragments in their messages) and our port's stable
- * reason strings. A wrong mapping here leaks PII into the UI or logs.
+ * Story 1.1 v3: every documented username + password authentication failure
+ * collapses to a single `invalid_credentials` reason so the UI renders one
+ * generic localized message. PII / brand leakage is the primary risk if
+ * this mapping is wrong; the secondary risk is the UI not collapsing
+ * enough reasons (which leaks "username not found" vs "wrong password").
  *
- * PII rule: fixtures use synthetic codes only — never real phone numbers,
- * never real OTP codes, never verbatim Clerk error messages.
+ * PII rule: no real usernames, no real passwords, no verbatim Clerk error
+ * messages anywhere in fixtures or assertions.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -15,29 +17,33 @@ import {
   mapSignInCode,
 } from '../adapters/clerk/sign-in-error-mapping';
 
-describe('mapSignInCode', () => {
-  it('maps phone_number_not_provisioned → not_provisioned', () => {
-    expect(mapSignInCode('phone_number_not_provisioned')).toBe('not_provisioned');
+describe('mapSignInCode (Story 1.1 v3)', () => {
+  it('maps form_password_incorrect → invalid_credentials', () => {
+    expect(mapSignInCode('form_password_incorrect')).toBe('invalid_credentials');
   });
 
-  it('maps form_param_format_invalid → invalid_identifier', () => {
-    expect(mapSignInCode('form_param_format_invalid')).toBe('invalid_identifier');
+  it('maps form_identifier_not_found → invalid_credentials', () => {
+    expect(mapSignInCode('form_identifier_not_found')).toBe('invalid_credentials');
   });
 
-  it('maps invalid_code → invalid_code', () => {
-    expect(mapSignInCode('invalid_code')).toBe('invalid_code');
+  it('maps form_identifier_exists → invalid_credentials (defense in depth)', () => {
+    expect(mapSignInCode('form_identifier_exists')).toBe('invalid_credentials');
   });
 
-  it('maps verification_failed → invalid_code (same UX path)', () => {
-    expect(mapSignInCode('verification_failed')).toBe('invalid_code');
+  it('maps user_locked → invalid_credentials', () => {
+    expect(mapSignInCode('user_locked')).toBe('invalid_credentials');
   });
 
-  it('maps expired_code → expired', () => {
-    expect(mapSignInCode('expired_code')).toBe('expired');
+  it('maps verification_failed → invalid_credentials', () => {
+    expect(mapSignInCode('verification_failed')).toBe('invalid_credentials');
   });
 
-  it('returns null for unknown codes', () => {
-    expect(mapSignInCode('something_else')).toBeNull();
+  it('maps form_param_format_invalid → invalid_credentials', () => {
+    expect(mapSignInCode('form_param_format_invalid')).toBe('invalid_credentials');
+  });
+
+  it('returns null for unknown codes (caller defaults to unexpected)', () => {
+    expect(mapSignInCode('something_unknown')).toBeNull();
     expect(mapSignInCode('')).toBeNull();
   });
 });
@@ -46,10 +52,10 @@ describe('extractClerkCode', () => {
   it('extracts the first code from the ClerkAPI errors[] array', () => {
     const err = {
       errors: [
-        { code: 'invalid_code', message: 'Code does not match' },
+        { code: 'form_password_incorrect', message: 'placeholder only' },
       ],
     };
-    expect(extractClerkCode(err)).toBe('invalid_code');
+    expect(extractClerkCode(err)).toBe('form_password_incorrect');
   });
 
   it('returns the first code when multiple errors are present', () => {
