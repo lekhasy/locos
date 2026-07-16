@@ -1,0 +1,31 @@
+# Story 1.0 AC #1, #5 — Postgres 17 for local dev.
+# Architecture: "Postgres 17 (Postgres 18 is current; 17 is the conservative choice)"
+#
+# Run:    docker compose up -d
+# Stop:   docker compose down
+# Reset:  docker compose down -v
+#
+# DATABASE_URL in .env.local must match the `locos:locos_dev_password@localhost:${LOCOS_POSTGRES_PORT:-5432}/locos`
+# URL advertised below.
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: locos-postgres
+    environment:
+      POSTGRES_USER: locos
+      POSTGRES_PASSWORD: locos_dev_password
+      POSTGRES_DB: locos
+    ports:
+      - "${LOCOS_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - locos_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U locos -d locos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  locos_pg_data:
+    name: locos_pg_data

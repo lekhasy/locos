@@ -427,3 +427,12 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# ─── locos (Next.js / Story 1.0) ─────────────────────────────────────────
+.env.local
+.env.*.local
+.next/
+out/
+dist/
+*.tsbuildinfo
+next-env.d.ts.bak

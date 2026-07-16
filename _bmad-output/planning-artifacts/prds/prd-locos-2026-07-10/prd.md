@@ -112,7 +112,7 @@ Chi runs a small dress shop in District 3. A new batch of linen dresses arrived 
 - **FR22.** A shop owner can view a list of the products they have published.
 - **FR23.** A shop owner can edit a product's title, description, price, and images. Edits update the **locos catalog record only**; existing Facebook posts are untouched (see FR17), and changes reach Facebook via republish.
 - **FR24.** A shop owner can delete a product from their locos catalog.
-- **FR25.** A shop owner can mark a product as **sold out** (distinct from deleting it).
+- **FR25.** A shop owner can mark a product as **sold out** (distinct from deleting it). A shop owner can also delete any single generated image from a product (Phase-1 UX-required FR-extension; accepted by Architecture via AD-4 tombstone-on-row semantics; addressed in epics Story 3.4 + Story 5.4).
 
 ## 7. Non-Functional Requirements
 
@@ -142,7 +142,7 @@ Chi runs a small dress shop in District 3. A new batch of linen dresses arrived 
 ## 9. Open Questions
 
 - **OQ1.** Should regeneration ever be capped (cost control), and if so how? Owner: Syle/product. Deferred per decision; revisit when generation cost per shop is observable.
-- **OQ2.** **[Pre-UX blocker]** Exact model-attribute options beyond gender — styles, body types, backgrounds. Must be resolved before UX design starts. Owner: Syle/product. (See FR11.)
+- **OQ2.** **Resolved 2026-07-10.** Model attributes = gender (Nữ / Nam) + style preset (Casual / Chic / Thời thượng / Tối giản). See `ux-locos-2026-07-10/EXPERIENCE.md` component `attribute-row` and epics FR11 mapping. (See FR11.)
 - **OQ3.** Facebook Page token-expiry handling specifics and how owners are notified to reconnect. Owner: architecture. (See FR7.)
 - **OQ4.** Do we need a lightweight admin view for the team to see which shops are active (for SM1/SM2), or does that live in internal tooling outside the shop app? Owner: Syle/product.
 
@@ -152,7 +152,7 @@ Consolidated view of the inline `[ASSUMPTION]` tags above, for quick review and 
 
 - **A1 (FR3):** Session TTL ~30 days of inactivity before re-auth. *To confirm.*
 - **A2 (FR7):** Reconnect-on-expiry is the desired Facebook token behavior.
-- **A3 (FR11 / OQ2):** Model attributes = gender + a small style set. *Pre-UX blocker.*
+- **A3 (FR11 / OQ2) — RESOLVED 2026-07-10:** Model attributes = gender (Nữ / Nam) + style preset (Casual / Chic / Thời thượng / Tối giản). See `ux-locos-2026-07-10/EXPERIENCE.md`.
 - **A4 (FR14):** Owner-provided price takes precedence over an AI-suggested one.
 - **A5 (NFR3):** ~5,000 shops / ~5,000 publishes per day is a design band, not an SLA.
 - **A6 (Dependencies):** Facebook app approval for Page posting is obtainable for this use case. *External gate — validate early.*

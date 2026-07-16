@@ -1,0 +1,51 @@
+{
+  "name": "locos",
+  "version": "0.1.0",
+  "private": true,
+  "overrides": {
+    "postcss": "8.5.10"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "next dev --turbo",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "worker": "tsx jobs/worker.ts",
+    "db:migrate": "tsx db/migrate.ts",
+    "db:seed": "tsx db/seed.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "next": "15.5.20",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "drizzle-orm": "0.45.2",
+    "pg": "8.13.1",
+    "@clerk/nextjs": "6.39.5",
+    "@fal-ai/client": "1.10.1",
+    "@google/genai": "2.11.0",
+    "graphile-worker": "0.16.6",
+    "pino": "9.5.0",
+    "libsodium-wrappers": "0.7.15",
+    "zod": "3.24.1",
+    "@paralleldrive/cuid2": "2.2.2"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "3.3.6",
+    "@types/node": "24.13.3",
+    "@types/pg": "8.11.10",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@types/libsodium-wrappers": "0.7.14",
+    "typescript": "5.7.2",
+    "tsx": "4.23.0",
+    "vitest": "4.1.10",
+    "eslint": "9.39.5",
+    "eslint-config-next": "15.5.20"
+  }
+}

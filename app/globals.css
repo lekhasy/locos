@@ -1,0 +1,10 @@
+/*
+ * Empty by design — DESIGN.md tokens are declared as CSS variables
+ * in Phase 1 once they land in Story 1.1. Keeping this file in place
+ * so Next.js App Router picks up globals.css at layout.tsx import.
+ */
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
