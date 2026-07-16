@@ -24,6 +24,7 @@ import {
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { useClerkSignInPort } from '@/adapters/clerk/sign-in-client';
+import { phoneSchema } from '@/ports/auth';
 import { recordLoginAction } from '../actions';
 
 const CELLS = 6 as const;
@@ -33,7 +34,9 @@ function parsePhone(input: string): { countryCode: '+84'; nationalNumber: string
   // input arrives as "+84xxxxxxxxx" from /login/otp?p=...
   if (!input.startsWith('+84')) return null;
   const national = input.slice(3);
-  if (!/^[0-9]{9,10}$/.test(national)) return null;
+  if (!phoneSchema.safeParse({ countryCode: '+84', nationalNumber: national }).success) {
+    return null;
+  }
   return { countryCode: '+84', nationalNumber: national };
 }
 

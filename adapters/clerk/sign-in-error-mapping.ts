@@ -7,6 +7,7 @@
  *
  * Mapping table:
  *   - phone_number_not_provisioned → not_provisioned
+ *   - form_param_format_invalid → invalid_identifier
  *   - invalid_code / verification_failed → invalid_code
  *   - expired_code → expired
  *   - everything else → null (caller decides the fallback reason)
@@ -28,6 +29,8 @@ export function mapSignInCode(code: string): RequestReason | VerifyReason | null
   switch (code) {
     case 'phone_number_not_provisioned':
       return 'not_provisioned';
+    case 'form_param_format_invalid':
+      return 'invalid_identifier';
     case 'invalid_code':
     case 'verification_failed':
       return 'invalid_code';

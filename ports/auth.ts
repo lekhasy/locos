@@ -21,14 +21,39 @@
 import { z } from 'zod';
 import type { Shop } from '@/core/shop/shop';
 
+export const VIETNAM_COUNTRY_CODE = '+84' as const;
+export const VIETNAM_MOBILE_NATIONAL_DIGITS = 9;
+
 export const phoneSchema = z.object({
-  countryCode: z.literal('+84'),
+  countryCode: z.literal(VIETNAM_COUNTRY_CODE),
   nationalNumber: z
     .string()
-    .regex(/^[0-9]{9,10}$/, 'nationalNumber must be 9–10 digits'),
+    .regex(/^[35789][0-9]{8}$/, 'nationalNumber must be a 9-digit Vietnam mobile number'),
 });
 
 export type PhoneInput = z.infer<typeof phoneSchema>;
+
+export function normalizeVietnamNationalNumber(raw: string): string {
+  const compact = raw.trim().replace(/[\s\-().]/g, '');
+  const digits = compact.replace(/[^0-9]/g, '');
+  let national = digits;
+
+  if (compact.startsWith('+84')) {
+    national = digits.slice(2);
+  } else if (digits.startsWith('84')) {
+    national = digits.slice(2);
+  }
+
+  if (national.length === 10 && national.startsWith('0')) {
+    national = national.slice(1);
+  }
+
+  return national;
+}
+
+export function toVietnamE164(phone: PhoneInput): string {
+  return `${phone.countryCode}${phone.nationalNumber}`;
+}
 
 export interface AuthPort {
   /**

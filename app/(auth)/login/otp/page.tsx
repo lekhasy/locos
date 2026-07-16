@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { OtpForm } from './OtpForm';
+import { phoneSchema } from '@/ports/auth';
 
 /**
  * /login/otp — phone + OTP login, step 2 (Story 1.1).
@@ -13,7 +14,13 @@ type Props = {
 
 export default async function OtpPage({ searchParams }: Props) {
   const { p } = await searchParams;
-  if (!p || !/^84[0-9]{9,10}$/.test(p)) redirect('/login');
+  const nationalNumber = p?.startsWith('84') ? p.slice(2) : '';
+  if (
+    !p ||
+    !phoneSchema.safeParse({ countryCode: '+84', nationalNumber }).success
+  ) {
+    redirect('/login');
+  }
   const phone = `+${p}`;
   return (
     <main className="auth-shell">

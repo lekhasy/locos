@@ -17,7 +17,7 @@ import type { PhoneInput } from './auth';
 
 export type OtpRequestResult =
   | { ok: true }
-  | { ok: false; reason: 'not_provisioned' | 'send_failed' };
+  | { ok: false; reason: 'not_provisioned' | 'invalid_identifier' | 'send_failed' };
 
 export type OtpVerifyResult =
   | { ok: true }

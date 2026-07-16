@@ -10,18 +10,16 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { phoneSchema } from '../ports/auth';
+import {
+  normalizeVietnamNationalNumber,
+  phoneSchema,
+  toVietnamE164,
+} from '../ports/auth';
 
 describe('phoneSchema (Story 1.1)', () => {
-  it('accepts +84 with 9 digits', () => {
+  it('accepts +84 with a 9-digit mobile national number', () => {
     expect(
       phoneSchema.safeParse({ countryCode: '+84', nationalNumber: '900000000' }).success,
-    ).toBe(true);
-  });
-
-  it('accepts +84 with 10 digits', () => {
-    expect(
-      phoneSchema.safeParse({ countryCode: '+84', nationalNumber: '9000000000' }).success,
     ).toBe(true);
   });
 
@@ -30,8 +28,8 @@ describe('phoneSchema (Story 1.1)', () => {
     expect(r.success).toBe(false);
   });
 
-  it('rejects 11+ digits', () => {
-    const r = phoneSchema.safeParse({ countryCode: '+84', nationalNumber: '90000000000' });
+  it('rejects 10+ national digits', () => {
+    const r = phoneSchema.safeParse({ countryCode: '+84', nationalNumber: '9000000000' });
     expect(r.success).toBe(false);
   });
 
@@ -45,8 +43,26 @@ describe('phoneSchema (Story 1.1)', () => {
     expect(r.success).toBe(false);
   });
 
+  it('rejects numbers outside Vietnam mobile prefixes', () => {
+    const r = phoneSchema.safeParse({ countryCode: '+84', nationalNumber: '100000000' });
+    expect(r.success).toBe(false);
+  });
+
   it('rejects missing fields', () => {
     expect(phoneSchema.safeParse({ countryCode: '+84' }).success).toBe(false);
     expect(phoneSchema.safeParse({ nationalNumber: '900000000' }).success).toBe(false);
+  });
+
+  it('normalizes common Vietnamese local and international input forms', () => {
+    expect(normalizeVietnamNationalNumber('0900 000 000')).toBe('900000000');
+    expect(normalizeVietnamNationalNumber('900000000')).toBe('900000000');
+    expect(normalizeVietnamNationalNumber('+84 900 000 000')).toBe('900000000');
+    expect(normalizeVietnamNationalNumber('84900000000')).toBe('900000000');
+  });
+
+  it('formats the exact E.164 identifier sent to Clerk', () => {
+    expect(toVietnamE164({ countryCode: '+84', nationalNumber: '900000000' })).toBe(
+      '+84900000000',
+    );
   });
 });

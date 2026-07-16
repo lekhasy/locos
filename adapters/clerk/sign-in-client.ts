@@ -23,7 +23,7 @@
  */
 
 import { useSignIn } from '@clerk/nextjs';
-import type { PhoneInput } from '@/ports/auth';
+import { toVietnamE164, type PhoneInput } from '@/ports/auth';
 import type {
   OtpRequestResult,
   OtpVerifyResult,
@@ -37,8 +37,6 @@ import {
   type VerifyReason,
 } from './sign-in-error-mapping';
 
-const FULL_PHONE = (p: PhoneInput): string => `${p.countryCode}${p.nationalNumber}`;
-
 /**
  * React hook returning the SignInPort for the current render. Components
  * that need the port call this hook (must be in a `'use client'` tree).
@@ -50,13 +48,15 @@ export function useClerkSignInPort(): SignInPort & { isLoaded: boolean } {
     if (!isLoaded) return { ok: false, reason: 'send_failed' };
     try {
       const { error } = await signIn.__internal_future.phoneCode.sendCode({
-        phoneNumber: FULL_PHONE(phone),
+        phoneNumber: toVietnamE164(phone),
       });
       if (error) {
         const code = extractClerkCode(error);
         const mapped = mapSignInCode(code ?? '');
         const reason: RequestReason =
-          mapped === 'not_provisioned' ? 'not_provisioned' : 'send_failed';
+          mapped === 'not_provisioned' || mapped === 'invalid_identifier'
+            ? mapped
+            : 'send_failed';
         metric('otp_request_failed', { reason, hasCode: code !== null });
         return { ok: false, reason };
       }

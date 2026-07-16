@@ -45,7 +45,7 @@ invalid, the process crashes with a clear message before any work begins.
 | Variable | Where to get it |
 |----------|-----------------|
 | `DATABASE_URL` | Matches `docker-compose.yml` default (`postgresql://locos:locos_dev_password@localhost:5432/locos`). |
-| `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | Create a Clerk dev app at <https://dashboard.clerk.com>. Enable phone+OTP auth, point SMS providers at eSMS.vn (primary) and Twilio Verify (fallback). |
+| `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | Create a Clerk dev app at <https://dashboard.clerk.com>. Enable phone number as a sign-in identifier with SMS code verification, then point SMS providers at eSMS.vn (primary) and Twilio Verify (fallback). |
 | `FAL_KEY` | fal.ai dashboard → API key. Used to call FASHN model-on-product image generation. |
 | `GEMINI_API_KEY` | Google AI Studio → API key. Used for Vietnamese marketing text generation. |
 | `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET` | Meta for Developers → create a dev app with the `pages_manage_posts` permission (subject to Meta app review — see PRD §8). |
@@ -59,6 +59,12 @@ Story 1.0 seeds a placeholder `clerk_user_id` in the DB. To actually log in:
 1. Open your Clerk dev app → **Users** → add a user with the phone number you want to use (e.g. `+84 9xx xxx xxx`).
 2. In `db/seed.ts`, change `DEV_CLERK_USER_ID` to match the user's `user_xxx` id (or update after the first real login to bind them).
 3. Hit <http://localhost:3000> — Story 1.1 will replace the placeholder page with the real login flow. Until then, you can log in via Clerk's dev UI.
+
+If Clerk returns `form_param_format_invalid` for the `identifier` field while
+the browser sends a value like `+84963961219`, the app is formatting the phone
+number correctly but the Clerk instance is rejecting phone identifiers. In that
+Clerk app, enable **phone number** under sign-in identifiers and make sure the
+test user has the same E.164 phone number registered on their profile.
 
 Story 1.3 enforces **provisioned-only** login: unknown phone numbers fail at
 Clerk (no self-registration). The dev seed is the only way to add a phone

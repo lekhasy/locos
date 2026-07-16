@@ -20,6 +20,10 @@ describe('mapSignInCode', () => {
     expect(mapSignInCode('phone_number_not_provisioned')).toBe('not_provisioned');
   });
 
+  it('maps form_param_format_invalid → invalid_identifier', () => {
+    expect(mapSignInCode('form_param_format_invalid')).toBe('invalid_identifier');
+  });
+
   it('maps invalid_code → invalid_code', () => {
     expect(mapSignInCode('invalid_code')).toBe('invalid_code');
   });

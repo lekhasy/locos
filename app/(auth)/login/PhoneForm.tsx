@@ -17,15 +17,7 @@
 import { useId, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useClerkSignInPort } from '@/adapters/clerk/sign-in-client';
-import { phoneSchema } from '@/ports/auth';
-
-function stripToNational(raw: string): string {
-  let s = raw.replace(/[\s\-()]/g, '');
-  if (s.startsWith('+84')) s = s.slice(3);
-  else if (s.startsWith('84')) s = s.slice(2);
-  else if (s.startsWith('0')) s = s.slice(1);
-  return s.replace(/[^0-9]/g, '');
-}
+import { normalizeVietnamNationalNumber, phoneSchema } from '@/ports/auth';
 
 function isValidNational(digits: string): boolean {
   return phoneSchema.safeParse({ countryCode: '+84', nationalNumber: digits }).success;
@@ -35,6 +27,8 @@ function errorMessage(reason: string | undefined): string {
   switch (reason) {
     case 'not_provisioned':
       return 'Số điện thoại chưa được đăng ký';
+    case 'invalid_identifier':
+      return 'Cấu hình Clerk chưa cho phép đăng nhập bằng số điện thoại';
     case 'send_failed':
       return 'Đã xảy ra lỗi, thử lại';
     case 'invalid_input':
@@ -83,7 +77,7 @@ export function PhoneForm() {
   };
 
   const onNationalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const next = stripToNational(e.target.value);
+    const next = normalizeVietnamNationalNumber(e.target.value);
     setNational(next);
     if (reason) setReason(undefined);
     if (isValidNational(next)) {
@@ -94,7 +88,7 @@ export function PhoneForm() {
 
   const onPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
     const pasted = e.clipboardData.getData('text');
-    const digits = stripToNational(pasted);
+    const digits = normalizeVietnamNationalNumber(pasted);
     if (!digits) return;
     e.preventDefault();
     setNational(digits);
