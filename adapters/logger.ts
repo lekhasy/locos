@@ -26,6 +26,8 @@ export const logger = pino({
   // In Next.js dev we want readable timestamps and lighter JSON; in prod, full structured.
   timestamp: pino.stdTimeFunctions.isoTime,
   // Redact the obvious PII paths defensively even if a caller slips.
+  // Wildcard forms catch nested fields like { err: { phone } } or { data: { otp } }
+  // that the top-level paths would miss.
   redact: {
     paths: [
       'phone',
@@ -36,6 +38,14 @@ export const logger = pino({
       'fb_token',
       'page_token',
       'access_token',
+      '*.phone',
+      '*.phone_number',
+      '*.otp',
+      '*.otp_code',
+      '*.token',
+      '*.fb_token',
+      '*.page_token',
+      '*.access_token',
     ],
     censor: '[REDACTED]',
   },

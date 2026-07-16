@@ -4,7 +4,7 @@ baseline_commit: 426aea83d76f5f3176c5295d43612c9e532615f0
 
 # Story 1.0: Local development setup
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -19,7 +19,7 @@ so that I can run the app on my machine and log in as a known user.
 1. Given the repo is cloned and Node 24 + Postgres 17 are available,
    when I run `npm install && npm run db:migrate && npm run db:seed && npm run dev`,
    then the Next.js app starts at http://localhost:3000.
-2. A `.env.example` documents every required env var: Clerk publishable + secret keys, FASHN key, Gemini key, Facebook dev app credentials, host secret for token envelope encryption, DB URL.
+2. A `.env.example` documents every required env var: Clerk publishable + secret keys, `FAL_KEY` (fal.ai credential used for FASHN image model), Gemini key, Facebook dev app credentials, host secret for token envelope encryption, DB URL.
 3. `env.ts` Zod-validates all env vars at boot; missing/invalid vars crash the process with a clear message before any work begins.
 4. `npm run worker` starts the Graphile Worker process in a separate terminal.
 5. The dev seed inserts: one `shop` row linked to a Clerk dev user, one encrypted `page_token` row for a dev Facebook Page, one sample `product` row with photos and a generated image reference.
@@ -42,7 +42,7 @@ so that I can run the app on my machine and log in as a known user.
 - [x] Task 3: `env.ts` Zod-validated env loader (AC: 2, 3)
   - [x] 3.1: Single source of truth — Zod schema covering all env vars in `.env.example`. **Critical:** architecture forbids `process.env.X` reads anywhere outside `env.ts`.
   - [x] 3.2: Throw a clear error on boot if any required var missing or invalid (per Consistency Conventions — "Configuration | All environment-specific values via `env.ts` with Zod schema validation at boot").
-  - [x] 3.3: Keys to validate at minimum: Clerk `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`; FASHN `FASHN_API_KEY`; Gemini `GEMINI_API_KEY`; Facebook dev app `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET`; token envelope host secret `LOCOS_HOST_SECRET` (libsodium secretbox key); `DATABASE_URL`.
+  - [x] 3.3: Keys to validate at minimum: Clerk `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`; `FAL_KEY` (fal.ai — used to call the FASHN image model); Gemini `GEMINI_API_KEY`; Facebook dev app `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET`; token envelope host secret `LOCOS_HOST_SECRET` (libsodium secretbox key); `DATABASE_URL`.
 
 - [x] Task 4: `.env.example` documentation (AC: 2)
   - [x] 4.1: One row per env var, with purpose comment and a placeholder value (never real secrets).
@@ -70,6 +70,21 @@ so that I can run the app on my machine and log in as a known user.
   - [x] 9.1: Run `npm install && npm run db:migrate && npm run db:seed && npm run dev` from a clean clone — verify Next.js boots on :3000 (empty placeholder page is acceptable for Story 1.0; routing/UX lands in Stories 1.1+).
   - [x] 9.2: Run `npm run worker` in a second terminal — verify Graphile Worker connects to Postgres and `verifyShopActive` is reachable (since no shops seeded with clerk_user_id yet, this should log a no-jobs message, not crash).
   - [x] 9.3: Boot with a missing env var — verify the Zod failure error message is actionable (names the variable).
+
+### Review Findings
+
+Code review 2026-07-10 (code/runtime chunk; docs/lockfile deferred by choice). Verdict: **Changes Requested** — 1 decision, 5 patches, 4 deferred, ~9 dismissed as noise.
+
+- [x] [Review][Decision] FAL_KEY vs FASHN_API_KEY — AC #2 and Task 3.3 specify env var `FASHN_API_KEY`; implementation uses `FAL_KEY` consistently across `env.ts`, `.env.example`, `package.json`, `README.md`, and tests. `FAL_KEY` is the truthful provider name (FASHN is a model hosted on fal.ai). Resolved: keep `FAL_KEY`; AC #2 and Task 3.3 wording updated to match.
+- [x] [Review][Patch] AD-1 guard test crashes on a clean clone — fixed by adding `.gitkeep` to `core/` and each subdir so the directory survives `git clone` [tests/arch-hexagonal.test.ts / core/**]
+- [x] [Review][Patch] AD-1 guard evadable by multi-line imports — fixed by scanning full file with a regex on `from '<banned>'` instead of per-line [tests/arch-hexagonal.test.ts:42]
+- [x] [Review][Patch] env.ts loads .env.local unconditionally — fixed by gating `loadEnvConfig` on `NODE_ENV !== 'test'` [env.ts:15]
+- [x] [Review][Patch] Worker double signal handling — fixed by switching to `noHandleSignals: true` so the custom shutdown handler owns the lifecycle [jobs/worker.ts:25]
+- [x] [Review][Patch] Logger redact misses nested PII — fixed by adding `*.`-prefixed wildcard paths to the redact list [adapters/logger.ts:30]
+- [x] [Review][Defer] schema.updatedAt lacks `$onUpdate` — no update path exists yet; revisit Story 5.3 (edit product) [adapters/postgres/schema.ts] — deferred, pre-existing
+- [x] [Review][Defer] pgcrypto extension unused and superuser-gated on managed PG — never edit an applied migration; revisit at managed-PG/infra [adapters/postgres/migrations/0001_initial.sql:5] — deferred, pre-existing
+- [x] [Review][Defer] jobs/[jobId] route ignores jobId (placeholder) — real polling lands Story 3.3 [app/api/jobs/[jobId]/route.ts] — deferred, pre-existing
+- [x] [Review][Defer] `@paralleldrive/cuid2` dep unused / no schema `defaultFn` — ID generation wires in Story 1.1 — deferred, pre-existing
 
 ## Dev Notes
 
@@ -173,3 +188,4 @@ Claude Code session (MiniMax-M3); story context originally generated by Claude O
 ### Change Log
 
 - 2026-07-10: Implemented Story 1.0 local scaffold, env validation, Postgres schema/migration/seed, logger, worker stub, README, and smoke tests; moved to review.
+- 2026-07-15: Code review patches applied — added `.gitkeep` to empty structural dirs (`core/**`, `adapters/**`, `app/(auth)/`, `jobs/`); hardened AD-1 guard test against multi-line imports and added NODE_ENV guard to env.ts; switched worker to `noHandleSignals: true`; extended logger redact paths with `*.` wildcards; AC #2/Task 3.3 wording aligned to `FAL_KEY`. All checks pass (7/7 tests, typecheck, lint). Status moved review → done.

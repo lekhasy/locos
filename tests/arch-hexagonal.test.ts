@@ -40,14 +40,11 @@ async function* walk(dir: string): AsyncGenerator<string> {
 }
 
 function hasBannedImport(source: string): string | null {
-  for (const line of source.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith('import')) continue;
-    for (const banned of BANNED_PREFIXES) {
-      if (trimmed.includes(`from '${banned}`) || trimmed.includes(`from "${banned}`)) {
-        return banned;
-      }
-    }
+  // Scan the full file (not line-by-line) so multi-line imports are caught
+  // even when the `from` clause sits on a continuation line.
+  for (const banned of BANNED_PREFIXES) {
+    const re = new RegExp(`from\\s+['"]${banned.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}`);
+    if (re.test(source)) return banned;
   }
   return null;
 }

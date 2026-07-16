@@ -12,7 +12,9 @@
 import { loadEnvConfig } from '@next/env';
 import { z } from 'zod';
 
-loadEnvConfig(process.cwd());
+// Skip in test runs — vitest sets up its own process.env and we don't want
+// .env.local on disk to repopulate deleted vars between cases.
+if (process.env.NODE_ENV !== 'test') loadEnvConfig(process.cwd());
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),

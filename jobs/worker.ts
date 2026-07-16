@@ -22,7 +22,9 @@ async function main() {
   const runner = await run({
     connectionString: env.DATABASE_URL,
     concurrency: 1,
-    noHandleSignals: false,
+    // We own shutdown so we can log the signal before stopping; Graphile's
+    // built-in handler would race our custom one and could double-call stop().
+    noHandleSignals: true,
     // No taskList in Story 1.0 — handlers attach in later stories.
     taskList: {},
     pollInterval: 1000,
