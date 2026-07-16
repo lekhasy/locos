@@ -1,10 +1,311 @@
-/*
- * Empty by design — DESIGN.md tokens are declared as CSS variables
- * in Phase 1 once they land in Story 1.1. Keeping this file in place
- * so Next.js App Router picks up globals.css at layout.tsx import.
+/**
+ * locos global styles — Story 1.1 token + component subset.
+ *
+ * Only the tokens and component classes needed by the login surface ship
+ * here. Future stories (1.x, 3.x, 5.x) extend this file with their own
+ * tokens; do not preemptively declare every token from DESIGN.md.
+ *
+ * Conventions (DESIGN.md):
+ *   - CSS variables for tokens (Phase 1 has no UI-system pipeline).
+ *   - No Tailwind / shadcn / MUI.
+ *   - Mobile-first single column, max 480px content width, centered.
+ *   - System font stack — Vietnamese diacritics covered.
+ *   - Focus: 1.5px accent ring, never a border color change.
  */
+
+:root {
+  /* Colors (DESIGN.md §Colors) */
+  --color-surface: #ffffff;
+  --color-surface-dim: #f7f8fa;
+  --color-surface-container: #eef0f3;
+  --color-outline: #e5e7eb;
+  --color-outline-strong: #d1d5db;
+  --color-ink-primary: #0f172a;
+  --color-ink-secondary: #475569;
+  --color-ink-tertiary: #94a3b8;
+  --color-accent: #2563eb;
+  --color-accent-soft: #dbeafe;
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --color-error: #dc2626;
+  --color-sold-out: #6b7280;
+
+  /* Typography (DESIGN.md §Typography) */
+  --font-body:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-numeric:
+    ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --text-body: 16px;
+  --text-body-sm: 14px;
+  --text-title: 22px;
+  --text-heading: 28px;
+  --text-label: 12px;
+  --line-body: 1.5;
+  --line-title: 1.3;
+  --line-heading: 1.25;
+
+  /* Spacing (DESIGN.md §Layout & Spacing) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  /* Shapes (DESIGN.md §Shapes) */
+  --rounded-sm: 6px;
+  --rounded-md: 10px;
+  --rounded-lg: 12px;
+  --rounded-full: 9999px;
+
+  /* Layout */
+  --content-max: 480px;
+  --gutter: var(--space-4);
+}
+
 html,
 body {
   margin: 0;
   padding: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: var(--line-body);
+  color: var(--color-ink-primary);
+  background: var(--color-surface);
+  -webkit-text-size-adjust: 100%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+/* ----------------------------------------------------------------------------
+ * Auth screen layout — single column, max 480px, centered.
+ * --------------------------------------------------------------------------*/
+.auth-shell {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  padding: var(--space-6) var(--gutter) var(--space-12);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: var(--content-max);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.auth-card h1 {
+  margin: 0;
+  font-size: var(--text-heading);
+  line-height: var(--line-heading);
+  font-weight: 600;
+}
+
+.auth-card p.helper {
+  margin: 0;
+  color: var(--color-ink-secondary);
+  font-size: var(--text-body-sm);
+}
+
+/* ----------------------------------------------------------------------------
+ * Button — primary (accent fill) + text (no border, accent text).
+ * --------------------------------------------------------------------------*/
+.button-primary {
+  background: var(--color-accent);
+  color: var(--color-surface);
+  border: none;
+  border-radius: var(--rounded-md);
+  padding: 0 var(--space-4);
+  min-height: 44px;
+  font-weight: 500;
+  width: 100%;
+}
+
+.button-primary:hover {
+  background: color-mix(in srgb, var(--color-accent) 90%, black);
+}
+
+.button-primary:disabled {
+  background: var(--color-outline);
+  color: var(--color-ink-tertiary);
+  cursor: not-allowed;
+}
+
+.button-text {
+  background: none;
+  border: none;
+  color: var(--color-accent);
+  padding: 0;
+  min-height: 44px;
+  font-weight: 500;
+}
+
+.button-text:disabled {
+  color: var(--color-ink-tertiary);
+  cursor: not-allowed;
+}
+
+/* ----------------------------------------------------------------------------
+ * Input — single-line base. Focus ring is 1.5px accent, never border color.
+ * --------------------------------------------------------------------------*/
+.input {
+  width: 100%;
+  background: var(--color-surface);
+  color: var(--color-ink-primary);
+  border: 1px solid var(--color-outline);
+  border-radius: var(--rounded-md);
+  padding: 0 var(--space-3);
+  height: 44px;
+  font-size: var(--text-body);
+  line-height: var(--line-body);
+  outline: none;
+}
+
+.input:focus {
+  box-shadow: 0 0 0 1.5px var(--color-accent);
+  border-color: transparent;
+}
+
+.input[aria-invalid='true'] {
+  box-shadow: 0 0 0 1.5px var(--color-error);
+  border-color: transparent;
+}
+
+/* ----------------------------------------------------------------------------
+ * Phone input — +84 prefix locked, editable national number after.
+ * --------------------------------------------------------------------------*/
+.phone-input {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--color-outline);
+  border-radius: var(--rounded-md);
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+.phone-input:focus-within {
+  box-shadow: 0 0 0 1.5px var(--color-accent);
+  border-color: transparent;
+}
+
+.phone-input__prefix {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  background: var(--color-surface-dim);
+  color: var(--color-ink-secondary);
+  font-size: var(--text-body);
+  border-right: 1px solid var(--color-outline);
+  user-select: none;
+  cursor: default;
+}
+
+.phone-input__national {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 0 var(--space-3);
+  height: 44px;
+  font-size: var(--text-body);
+  line-height: var(--line-body);
+  color: var(--color-ink-primary);
+  outline: none;
+  font-family: inherit;
+}
+
+.phone-input__national::placeholder {
+  color: var(--color-ink-tertiary);
+}
+
+/* ----------------------------------------------------------------------------
+ * OTP cell — six 48×56px cells, paste-anywhere.
+ * --------------------------------------------------------------------------*/
+.otp-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 48px);
+  gap: var(--space-2);
+  justify-content: center;
+}
+
+.otp-cell {
+  width: 48px;
+  height: 56px;
+  text-align: center;
+  font-family: var(--font-body);
+  font-size: var(--text-title);
+  font-weight: 600;
+  background: var(--color-surface);
+  color: var(--color-ink-primary);
+  border: 1px solid var(--color-outline);
+  border-radius: var(--rounded-md);
+  outline: none;
+  caret-color: var(--color-accent);
+}
+
+.otp-cell:focus {
+  box-shadow: 0 0 0 1.5px var(--color-accent);
+  border-color: transparent;
+}
+
+.otp-cell[aria-invalid='true'] {
+  box-shadow: 0 0 0 1.5px var(--color-error);
+  border-color: transparent;
+}
+
+/* ----------------------------------------------------------------------------
+ * Form — error and live-region styling.
+ * --------------------------------------------------------------------------*/
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.form-label {
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-ink-secondary);
+}
+
+.form-error {
+  font-size: var(--text-body-sm);
+  color: var(--color-error);
+  margin: 0;
+  min-height: 1.2em;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.live-region {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
