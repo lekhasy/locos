@@ -8,6 +8,15 @@
  * wraps that hook and exposes the SignInPort contract so the login UI
  * (`PhoneForm`, `OtpForm`) doesn't import `@clerk/nextjs` directly.
  *
+ * Uses the `__internal_future` API surface (`signIn.__internal_future.phoneCode.*`)
+ * instead of the classic `signIn.create({ strategy: 'phone_code' })` /
+ * `signIn.attemptFirstFactor({ strategy: 'phone_code' })`. The classic API
+ * rejects `phone_code` against the current Clerk FAPI version
+ * (`__clerk_api_version=2025-11-10`) with
+ * `phone_code does not match one of the allowed values for parameter strategy`.
+ * The future-API methods use cleaner typed return shapes and are the path
+ * Clerk documents for new flows.
+ *
  * Logging: errors are mapped to stable reason strings; phone numbers
  * and OTP codes never appear in the log payloads (defense-in-depth:
  * the logger's redact list also catches them).
@@ -40,19 +49,22 @@ export function useClerkSignInPort(): SignInPort & { isLoaded: boolean } {
   const requestOtp = async (phone: PhoneInput): Promise<OtpRequestResult> => {
     if (!isLoaded) return { ok: false, reason: 'send_failed' };
     try {
-      await signIn.create({
-        strategy: 'phone_code',
-        identifier: FULL_PHONE(phone),
+      const { error } = await signIn.__internal_future.phoneCode.sendCode({
+        phoneNumber: FULL_PHONE(phone),
       });
+      if (error) {
+        const code = extractClerkCode(error);
+        const mapped = mapSignInCode(code ?? '');
+        const reason: RequestReason =
+          mapped === 'not_provisioned' ? 'not_provisioned' : 'send_failed';
+        metric('otp_request_failed', { reason, hasCode: code !== null });
+        return { ok: false, reason };
+      }
       metric('otp_request_sent', { countryCode: phone.countryCode });
       return { ok: true };
     } catch (err) {
-      const code = extractClerkCode(err);
-      const mapped = mapSignInCode(code ?? '');
-      const reason: RequestReason =
-        mapped === 'not_provisioned' ? 'not_provisioned' : 'send_failed';
-      metric('otp_request_failed', { reason, hasCode: code !== null });
-      return { ok: false, reason };
+      metric('otp_request_failed', { reason: 'send_failed', hasCode: false });
+      return { ok: false, reason: 'send_failed' };
     }
   };
 
@@ -62,22 +74,26 @@ export function useClerkSignInPort(): SignInPort & { isLoaded: boolean } {
   ): Promise<OtpVerifyResult> => {
     if (!isLoaded) return { ok: false, reason: 'unexpected' };
     try {
-      const result = await signIn.attemptFirstFactor({
-        strategy: 'phone_code',
+      const { error } = await signIn.__internal_future.phoneCode.verifyCode({
         code,
       });
-      if (result.createdSessionId && setActive) {
-        await setActive({ session: result.createdSessionId });
+      if (error) {
+        const codeStr = extractClerkCode(error);
+        const mapped = mapSignInCode(codeStr ?? '');
+        const reason: VerifyReason =
+          mapped === 'invalid_code' || mapped === 'expired' ? mapped : 'unexpected';
+        metric('otp_verify_failed', { reason, hasCode: codeStr !== null });
+        return { ok: false, reason };
+      }
+      const sessionId = signIn.createdSessionId;
+      if (sessionId && setActive) {
+        await setActive({ session: sessionId });
       }
       metric('otp_verify_succeeded');
       return { ok: true };
     } catch (err) {
-      const code = extractClerkCode(err);
-      const mapped = mapSignInCode(code ?? '');
-      const reason: VerifyReason =
-        mapped === 'invalid_code' || mapped === 'expired' ? mapped : 'unexpected';
-      metric('otp_verify_failed', { reason, hasCode: code !== null });
-      return { ok: false, reason };
+      metric('otp_verify_failed', { reason: 'unexpected', hasCode: false });
+      return { ok: false, reason: 'unexpected' };
     }
   };
 

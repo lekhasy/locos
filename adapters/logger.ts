@@ -10,6 +10,12 @@
  * keep the dep tree small — pipe through `npx pino-pretty` if a human-readable
  * stream is desired.
  *
+ * LOG_LEVEL comes from `process.env.LOG_LEVEL` (validated in env.ts at boot).
+ * We read it indirectly here so this module stays importable from client code
+ * — `env.ts` transitively imports `@next/env` (uses Node `fs`) which would
+ * otherwise pull `fs` into the browser bundle. pino auto-detects LOG_LEVEL
+ * from process.env when `level` is not set.
+ *
  * Future stories emit metric events through this same logger (AR-13):
  *   shop_login, product_created, generation_started, generation_completed,
  *   generation_failed, regeneration_requested, publish_attempted,
@@ -18,10 +24,8 @@
  */
 
 import pino from 'pino';
-import { env } from '@/env';
 
 export const logger = pino({
-  level: env.LOG_LEVEL,
   base: { service: 'locos' },
   // In Next.js dev we want readable timestamps and lighter JSON; in prod, full structured.
   timestamp: pino.stdTimeFunctions.isoTime,
