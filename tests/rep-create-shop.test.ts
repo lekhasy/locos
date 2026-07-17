@@ -46,7 +46,11 @@ function validInput() {
 }
 
 function makeRepPort(impl: (i: CreateClerkUserInput) => Promise<CreateClerkUserResult>): RepPort {
-  return { createClerkUser: vi.fn(impl) };
+  return {
+    createClerkUser: vi.fn(impl),
+    setClerkUserPassword: vi.fn(async () => ({ ok: true as const })),
+    getClerkUsername: vi.fn(async () => ({ ok: true as const, username: '' })),
+  };
 }
 
 function makeShopRepo(impl: (i: ShopInsertInput) => Promise<Shop>): ShopRepositoryPort {

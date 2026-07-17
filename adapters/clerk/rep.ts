@@ -20,8 +20,10 @@ import { clerkClient, currentUser } from '@clerk/nextjs/server';
 import type {
   CreateClerkUserInput,
   CreateClerkUserResult,
+  GetClerkUsernameResult,
   RepPort,
   RepPortFactory,
+  SetClerkPasswordResult,
 } from '@/ports/rep';
 import { metric } from '@/adapters/logger';
 import {
@@ -57,6 +59,47 @@ export class ClerkRepAdapter implements RepPort {
           ? mapped
           : 'unexpected';
       metric('rep_shop_create_failed', { reason, hasCode: code !== null });
+      return { ok: false, reason };
+    }
+  }
+
+  async setClerkUserPassword(
+    clerkUserId: string,
+    newPassword: string,
+  ): Promise<SetClerkPasswordResult> {
+    metric('rep_password_reset_attempted');
+    try {
+      const client = await clerkClient();
+      await client.users.updateUser(clerkUserId, { password: newPassword });
+      metric('rep_password_reset_clerk_succeeded');
+      return { ok: true };
+    } catch (err) {
+      const code = extractClerkCode(err);
+      // Clerk returns resource_not_found / 404-ish when the user id is
+      // unknown. Without a stable code map (password writes have fewer
+      // error shapes than create), fall back to `unexpected` and let the
+      // caller re-check.
+      const reason = code === 'resource_not_found' ? 'not_found' : 'unexpected';
+      metric('rep_password_reset_failed', { reason, hasCode: code !== null });
+      return { ok: false, reason };
+    }
+  }
+
+  async getClerkUsername(clerkUserId: string): Promise<GetClerkUsernameResult> {
+    metric('rep_username_lookup_attempted');
+    try {
+      const client = await clerkClient();
+      const user = await client.users.getUser(clerkUserId);
+      if (!user || typeof user.username !== 'string' || user.username.length === 0) {
+        metric('rep_username_lookup_failed', { reason: 'not_found' });
+        return { ok: false, reason: 'not_found' };
+      }
+      metric('rep_username_lookup_succeeded');
+      return { ok: true, username: user.username };
+    } catch (err) {
+      const code = extractClerkCode(err);
+      const reason = code === 'resource_not_found' ? 'not_found' : 'unexpected';
+      metric('rep_username_lookup_failed', { reason, hasCode: code !== null });
       return { ok: false, reason };
     }
   }

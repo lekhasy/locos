@@ -18,14 +18,21 @@
  * phone to `null` (the form submits an empty string when the rep leaves
  * the field blank; the DB column is nullable and stores NULL for "not
  * provided").
+ *
+ * Credentials handoff: on success, the action returns the rep's username
+ * + password + login URL so the client form can render the copy-to-clip
+ * card. We do NOT redirect to the detail page — the rep must see the
+ * credentials and copy them before navigating away. The password is not
+ * persisted anywhere; this is the only window the rep has to capture
+ * it for the shop-owner handoff.
  */
 
-import { redirect } from 'next/navigation';
 import { clerkRepAdapterFactory } from '@/adapters/clerk/rep';
 import { postgresShopRepositoryFactory } from '@/adapters/postgres/repositories/shop-repository';
 import { createShop } from '@/core/rep/create-shop';
 import type { CreateShopInput } from '@/ports/rep';
 import { metric } from '@/adapters/logger';
+import { DEFAULT_LOCOS_LOGIN_URL } from '@/core/rep/credentials-message';
 
 /**
  * Wire-format input — what the form sends. `contactPhone` is always a
@@ -41,7 +48,15 @@ export type CreateShopActionInput = {
 };
 
 export type CreateShopActionResult =
-  | { ok: true; shopId: string }
+  | {
+      ok: true;
+      shopId: string;
+      credentials: {
+        username: string;
+        password: string;
+        loginUrl: string;
+      };
+    }
   | {
       ok: false;
       reason: 'username_taken' | 'shop_write_failed' | 'invalid_input';
@@ -52,8 +67,12 @@ export type CreateShopActionResult =
 export async function createShopAction(
   input: CreateShopActionInput,
 ): Promise<CreateShopActionResult> {
+  // Trim the username at the boundary so what we echo back via
+  // credentials matches what Clerk stored (the core also trims, but the
+  // form-level rep-touched value should be trimmed once here).
+  const trimmedUsername = input.username.trim();
   const domainInput: CreateShopInput = {
-    username: input.username,
+    username: trimmedUsername,
     password: input.password,
     displayName: input.displayName,
     address: input.address,
@@ -71,7 +90,15 @@ export async function createShopAction(
 
   if (result.ok) {
     metric('rep_shop_create_succeeded', { shopId: result.shop.id });
-    redirect(`/rep/shops/${result.shop.id}`);
+    return {
+      ok: true,
+      shopId: result.shop.id,
+      credentials: {
+        username: trimmedUsername,
+        password: input.password,
+        loginUrl: DEFAULT_LOCOS_LOGIN_URL,
+      },
+    };
   }
 
   if (result.reason === 'username_taken') {

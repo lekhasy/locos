@@ -33,7 +33,37 @@ export interface RepPort {
    * vs partial failure cases.
    */
   createClerkUser(input: CreateClerkUserInput): Promise<CreateClerkUserResult>;
+
+  /**
+   * Set a Clerk user's password directly via
+   * `clerkClient.users.updateUser`. Used by the reset-password flow when
+   * a shop owner forgets their first-login credentials — the rep resets
+   * server-side and copies the new password to the shop owner. The
+   * password value comes from `generatePassword` in `core/rep/`; the
+   * adapter is intentionally dumb and just hands it to Clerk.
+   */
+  setClerkUserPassword(
+    clerkUserId: string,
+    newPassword: string,
+  ): Promise<SetClerkPasswordResult>;
+
+  /**
+   * Read the username from a Clerk user. Used by the reset flow to put
+   * the shop owner's username back into the regenerated copy card —
+   * the `shop` row holds the opaque `clerk_user_id`, not the username,
+   * so we ask Clerk. Returns `not_found` if the Clerk user is missing
+   * or has no username set.
+   */
+  getClerkUsername(clerkUserId: string): Promise<GetClerkUsernameResult>;
 }
+
+export type SetClerkPasswordResult =
+  | { ok: true }
+  | { ok: false; reason: 'not_found' | 'unexpected' };
+
+export type GetClerkUsernameResult =
+  | { ok: true; username: string }
+  | { ok: false; reason: 'not_found' | 'unexpected' };
 
 export type RepPortFactory = () => RepPort;
 

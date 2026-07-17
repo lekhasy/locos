@@ -1,26 +1,37 @@
 'use client';
 
 /**
- * NewShopForm — two-step "create shop" form for sales reps.
+ * NewShopForm — three states for the rep's new-shop flow.
  *
- * Story 1.3 / Rev C:
+ * Story 1.3 / Rev C + credentials handoff:
  *   Step 1 — Clerk user (Tên đăng nhập, Mật khẩu with Hiện/Ẩn toggle)
  *   Step 2 — Shop details (Tên cửa hàng, Địa chỉ, Số điện thoại liên hệ)
+ *   Success — CredentialsCard with copy button (replaces form on success)
  *
- * Submit → createShopAction → redirect to /rep/shops/{shopId}.
+ * Submit → createShopAction → success: render CredentialsCard so the
+ * rep can copy the shop owner's first-login credentials (we don't store
+ * the password). Failure: stay on step 2 with field errors or partial-
+ * failure banner.
  *
- * No OTP, no email verification; the rep walks through two steps and
- * the server action creates the Clerk user + writes the matching `shop`
- * row in the same handler. AC #6 (partial-failure banner copy) and
- * AC #7 (full-failure field-level error) live here.
+ * AC #6 (partial-failure banner copy) and AC #7 (full-failure field-
+ * level error) live on step 2.
  */
 
 import { useState, useTransition } from 'react';
 import { createShopAction, type CreateShopActionResult } from './actions';
+import { CredentialsCard } from './CredentialsCard';
 
 type Field = 'username' | 'password' | 'displayName' | 'address' | 'contactPhone';
 
 type FieldErrorState = Partial<Record<Field, string>>;
+
+type Credentials = {
+  shopId: string;
+  displayName: string;
+  username: string;
+  password: string;
+  loginUrl: string;
+};
 
 type State = {
   step: 1 | 2;
@@ -32,6 +43,7 @@ type State = {
   contactPhone: string;
   fieldErrors: FieldErrorState;
   partialFailure: string | null;
+  credentials: Credentials | null;
 };
 
 const STEP_1_HELPERS = {
@@ -85,6 +97,7 @@ export function NewShopForm() {
     contactPhone: '',
     fieldErrors: {},
     partialFailure: null,
+    credentials: null,
   });
   const [pending, startTransition] = useTransition();
 
@@ -143,9 +156,28 @@ export function NewShopForm() {
         address: state.address,
         contactPhone: state.contactPhone,
       });
+      if (result.ok) {
+        setState((prev) => ({
+          ...prev,
+          credentials: {
+            shopId: result.shopId,
+            displayName: displayNameTrim,
+            username: result.credentials.username,
+            password: result.credentials.password,
+            loginUrl: result.credentials.loginUrl,
+          },
+          fieldErrors: {},
+          partialFailure: null,
+        }));
+        return;
+      }
       const { partialFailure, fieldErrors } = translateReason(result);
       setState((prev) => ({ ...prev, partialFailure, fieldErrors }));
     });
+  }
+
+  if (state.credentials) {
+    return <CredentialsCard {...state.credentials} />;
   }
 
   if (state.step === 1) {
