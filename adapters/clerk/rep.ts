@@ -54,12 +54,22 @@ export class ClerkRepAdapter implements RepPort {
     } catch (err) {
       const code = extractClerkCode(err);
       const mapped = mapCreateUserCode(code);
-      const reason =
-        mapped === 'username_taken' || mapped === 'invalid_input'
-          ? mapped
-          : 'unexpected';
-      metric('rep_shop_create_failed', { reason, hasCode: code !== null });
-      return { ok: false, reason };
+      if (!mapped) {
+        metric('rep_shop_create_failed', { reason: 'unexpected', hasCode: false });
+        return { ok: false, reason: 'unexpected' as const };
+      }
+      if (mapped.reason === 'username_taken') {
+        metric('rep_shop_create_failed', { reason: 'username_taken', hasCode: true });
+        return { ok: false, reason: 'username_taken' as const };
+      }
+      // invalid_input — preserve the field info when the Clerk code
+      // disambiguates (password vs username).
+      metric('rep_shop_create_failed', {
+        reason: 'invalid_input',
+        field: mapped.field ?? 'unknown',
+        hasCode: true,
+      });
+      return { ok: false, reason: 'invalid_input', field: mapped.field };
     }
   }
 

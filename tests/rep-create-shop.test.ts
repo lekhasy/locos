@@ -113,6 +113,68 @@ describe('createShop (Story 1.3)', () => {
     });
   });
 
+  it('unexpected Clerk error: clerkWrite never reaches Postgres, partialClerkUserCreated=false', async () => {
+    const repPort = makeRepPort(async () => ({
+      ok: false,
+      reason: 'unexpected' as const,
+    }));
+    const shopRepo = makeShopRepo(async () => {
+      throw new Error('shop insert must not be called when Clerk failed');
+    });
+
+    const result = await createShop(validInput(), { repPort, shopRepo });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe('shop_write_failed');
+      if (result.reason === 'shop_write_failed') {
+        expect(result.partialClerkUserCreated).toBe(false);
+      }
+    }
+    expect(shopRepo.insert).not.toHaveBeenCalled();
+  });
+
+  it('Clerk invalid_input with field=password → preserved through orchestrator', async () => {
+    const repPort = makeRepPort(async () => ({
+      ok: false,
+      reason: 'invalid_input' as const,
+      field: 'password' as const,
+    }));
+    const shopRepo = makeShopRepo(async () => fakeShopRow());
+
+    const result = await createShop(validInput(), { repPort, shopRepo });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe('invalid_input');
+      if (result.reason === 'invalid_input') {
+        expect(result.field).toBe('password');
+      }
+    }
+    expect(shopRepo.insert).not.toHaveBeenCalled();
+  });
+
+  it('Clerk invalid_input without a field disambiguator → defaults to field=username', async () => {
+    // form_param_format_invalid (and similar) don't say which form
+    // field — the orchestrator picks 'username' as the safe default
+    // since it's the first Clerk-owned field on the form.
+    const repPort = makeRepPort(async () => ({
+      ok: false,
+      reason: 'invalid_input' as const,
+    }));
+    const shopRepo = makeShopRepo(async () => fakeShopRow());
+
+    const result = await createShop(validInput(), { repPort, shopRepo });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe('invalid_input');
+      if (result.reason === 'invalid_input') {
+        expect(result.field).toBe('username');
+      }
+    }
+  });
+
   it('invalid input: bad username (too short) → no port call', async () => {
     const repPort = makeRepPort(async () => {
       throw new Error('port must not be called on invalid input');
@@ -129,7 +191,9 @@ describe('createShop (Story 1.3)', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.reason).toBe('invalid_input');
-      expect(result.field).toBe('username');
+      if (result.reason === 'invalid_input') {
+        expect(result.field).toBe('username');
+      }
     }
     expect(repPort.createClerkUser).not.toHaveBeenCalled();
     expect(shopRepo.insert).not.toHaveBeenCalled();
@@ -146,7 +210,9 @@ describe('createShop (Story 1.3)', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.reason).toBe('invalid_input');
-      expect(result.field).toBe('username');
+      if (result.reason === 'invalid_input') {
+        expect(result.field).toBe('username');
+      }
     }
   });
 
@@ -161,7 +227,9 @@ describe('createShop (Story 1.3)', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.reason).toBe('invalid_input');
-      expect(result.field).toBe('displayName');
+      if (result.reason === 'invalid_input') {
+        expect(result.field).toBe('displayName');
+      }
     }
   });
 
@@ -176,7 +244,9 @@ describe('createShop (Story 1.3)', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.reason).toBe('invalid_input');
-      expect(result.field).toBe('address');
+      if (result.reason === 'invalid_input') {
+        expect(result.field).toBe('address');
+      }
     }
   });
 
@@ -191,7 +261,9 @@ describe('createShop (Story 1.3)', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.reason).toBe('invalid_input');
-      expect(result.field).toBe('contactPhone');
+      if (result.reason === 'invalid_input') {
+        expect(result.field).toBe('contactPhone');
+      }
     }
   });
 

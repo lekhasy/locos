@@ -13,6 +13,12 @@
  *      Best-effort — no compensating delete on the Clerk side; orphan
  *      Clerk users are visible to ops via Clerk dashboard.
  *
+ * Field error attribution: when Clerk rejects with `invalid_input`, we
+ * preserve the upstream `field` ('username' | 'password'). For ambiguous
+ * codes (e.g. `form_param_format_invalid`) we default to `'username'`
+ * since that's the first Clerk-owned field on the form and is the most
+ * likely origin of a generic format complaint.
+ *
  * AD-1: ports injected as parameters. No `@clerk`, `drizzle`, or
  * `adapters/*` imports inside `core/` — metric emission is owned by
  * the caller's adapter layer (`adapters/clerk/rep.ts`,
@@ -112,16 +118,23 @@ export async function createShop(
   });
 
   if (!clerkResult.ok) {
-    // The Clerk adapter's reason set is a subset of our rep reason set;
-    // any "unexpected" upstream surfaces as a generic "shop_write_failed"
-    // to the rep (no useful action on the form).
     if (clerkResult.reason === 'username_taken') {
       return { ok: false, reason: 'username_taken' };
     }
     if (clerkResult.reason === 'invalid_input') {
-      return { ok: false, reason: 'invalid_input', field: 'username' };
+      // Default to 'username' for codes that don't specify (e.g.
+      // `form_param_format_invalid`) — the first Clerk-owned field on
+      // the form is the username and is the most likely origin.
+      return {
+        ok: false,
+        reason: 'invalid_input',
+        field: clerkResult.field ?? 'username',
+      };
     }
-    return { ok: false, reason: 'shop_write_failed' };
+    // clerkResult.reason === 'unexpected' — Clerk rejected and we
+    // never wrote a shop row. Surface to the rep as a generic failure
+    // (banner in the form, distinct from the partial-failure banner).
+    return { ok: false, reason: 'shop_write_failed', partialClerkUserCreated: false };
   }
 
   // (2) Postgres second. Failure here leaves an orphan Clerk user.

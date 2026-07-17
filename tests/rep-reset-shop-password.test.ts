@@ -132,4 +132,73 @@ describe('resetShopPassword', () => {
     if (!a.ok || !b.ok) throw new Error('unreachable');
     expect(a.newPassword).not.toBe(b.newPassword);
   });
+
+  it('serializes concurrent resets for the same clerk user id', async () => {
+    // Two requests fire in parallel with no coordination; the lock
+    // chains them so the second `setClerkUserPassword` only runs after
+    // the first completes. Without the lock we'd see
+    // ["username","username","password","password"] (interleaved); with
+    // the lock we see ["username","password","username","password"].
+    const order: string[] = [];
+    const port: RepPort = {
+      createClerkUser: () => {
+        throw new Error('not used');
+      },
+      getClerkUsername: async () => {
+        order.push('username');
+        await new Promise((r) => setTimeout(r, 5));
+        return { ok: true, username: 'shopowner1' };
+      },
+      setClerkUserPassword: async (_id, pw) => {
+        order.push(`password:${pw}`);
+        return { ok: true };
+      },
+    };
+
+    await Promise.all([
+      resetShopPassword({ clerkUserId: 'user_xyz' }, { repPort: port }),
+      resetShopPassword({ clerkUserId: 'user_xyz' }, { repPort: port }),
+    ]);
+
+    expect(order).toEqual([
+      'username',
+      expect.stringMatching(/^password:/),
+      'username',
+      expect.stringMatching(/^password:/),
+    ]);
+    // Distinct passwords means the Clerk write for B happened after A.
+    const pws = order
+      .filter((s): s is string => s.startsWith('password:'))
+      .map((s) => s.slice('password:'.length));
+    expect(new Set(pws).size).toBe(2);
+  });
+
+  it('does not serialize resets for distinct clerk user ids', async () => {
+    // Different shop rows must run independently — a slow reset on one
+    // shop should not back up another shop's reset.
+    const events: string[] = [];
+    const port: RepPort = {
+      createClerkUser: () => {
+        throw new Error('not used');
+      },
+      getClerkUsername: async (id) => {
+        events.push(`u:${id}`);
+        return { ok: true, username: `user_${id}` };
+      },
+      setClerkUserPassword: async (id) => {
+        events.push(`p:${id}`);
+        return { ok: true };
+      },
+    };
+
+    await Promise.all([
+      resetShopPassword({ clerkUserId: 'user_a' }, { repPort: port }),
+      resetShopPassword({ clerkUserId: 'user_b' }, { repPort: port }),
+    ]);
+
+    // Each id's username must precede that id's password — no cross-
+    // id interleaving.
+    expect(events.indexOf('u:user_a')).toBeLessThan(events.indexOf('p:user_a'));
+    expect(events.indexOf('u:user_b')).toBeLessThan(events.indexOf('p:user_b'));
+  });
 });

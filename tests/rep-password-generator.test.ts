@@ -68,14 +68,36 @@ describe('generatePassword', () => {
     expect(pw).toBe('AAAAAAAAAAAA');
   });
 
-  it('uses module-position in the alphabet (bytes modulo length)', () => {
-    // bytes [5, 6, 7] with alphabet of length 3 → indices 5 % 3 = 2, 6 % 3 = 0, 7 % 3 = 1
+  it('maps accepted bytes via modulo alphabet-length (rejection sampling)', () => {
+    // 256 % 3 = 1 so the cutoff is 255; bytes [5, 6, 7] all pass and
+    // map to alphabet slots 5 % 3 = 2, 6 % 3 = 0, 7 % 3 = 1.
     const pw = generatePassword({
       length: 3,
       random: () => new Uint8Array([5, 6, 7]),
       alphabet: 'abc',
     });
     expect(pw).toBe('cab');
+  });
+
+  it('rejects bytes at or above the cutoff to keep output uniform', () => {
+    // SAFE_ALPHABET has 56 chars; 256 % 56 = 32, so cutoff is 224. Bytes
+    // 224..255 are in the rejection window.
+    let calls = 0;
+    const result = generatePassword({
+      length: 1,
+      random: (n) => {
+        calls += 1;
+        // First chunk: all rejection-window bytes (255). Second chunk:
+        // an accepted byte (0) so the loop terminates.
+        if (calls === 1) return new Uint8Array(n).fill(255);
+        return new Uint8Array([0, ...new Uint8Array(n - 1).fill(255)]);
+      },
+    });
+    expect(result).toHaveLength(1);
+    expect(SAFE_ALPHABET).toContain(result);
+    // First call's outputs were entirely rejected; we needed a second
+    // round of draws to satisfy `length: 1`.
+    expect(calls).toBeGreaterThanOrEqual(2);
   });
 
   it('throws when alphabet is empty', () => {

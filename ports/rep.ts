@@ -22,7 +22,9 @@ export type CreateClerkUserInput = {
 
 export type CreateClerkUserResult =
   | { ok: true; clerkUserId: string }
-  | { ok: false; reason: 'username_taken' | 'invalid_input' | 'unexpected' };
+  | { ok: false; reason: 'username_taken' }
+  | { ok: false; reason: 'invalid_input'; field?: 'username' | 'password' }
+  | { ok: false; reason: 'unexpected' };
 
 export interface RepPort {
   /**
@@ -79,9 +81,23 @@ export type CreateShopInput = CreateClerkUserInput & {
 
 export type CreateShopResult =
   | { ok: true; shop: { id: string } }
+  | { ok: false; reason: 'username_taken' }
   | {
       ok: false;
-      reason: 'invalid_input' | 'username_taken' | 'shop_write_failed';
-      partialClerkUserCreated?: boolean;
-      field?: 'username' | 'password' | 'displayName' | 'address' | 'contactPhone';
+      reason: 'invalid_input';
+      field: 'username' | 'password' | 'displayName' | 'address' | 'contactPhone';
+    }
+  | {
+      ok: false;
+      reason: 'shop_write_failed';
+      /**
+       * `true` — Clerk user was created but the local `shop` insert failed;
+       * the rep sees a partial-failure banner and should retry with a
+       * different username. Orphan Clerk users are visible to ops via
+       * Clerk dashboard (no compensating delete).
+       * `false` — Clerk rejected the createUser call; no Clerk user was
+       * created. The rep sees a generic failure banner and can retry
+       * without changing credentials.
+       */
+      partialClerkUserCreated: boolean;
     };

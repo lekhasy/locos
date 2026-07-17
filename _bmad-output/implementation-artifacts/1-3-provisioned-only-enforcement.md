@@ -5,7 +5,11 @@ review_iteration_commit: pending
 
 # Story 1.3: In-app sales-rep provisioning
 
-Status: ready-for-dev
+Status: review
+
+(2026-07-16: 8 review patches applied — see "Review Findings" at the end of
+this file. Status remains `review` until the next code-review cycle; the
+patches land the contract work that was approved in the review walk-through.)
 
 This story was fully rewritten under Sprint Change Proposal
 `_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-16.md`
@@ -45,38 +49,92 @@ does account setup, and I hand them a complete account ready for product work.
    (a) calls `clerkClient.users.createUser({ username, password })` and
    (b) writes the matching `shop` row bound by `clerkUserId`. Both writes
    happen in the same handler.
-5. On full success, the rep is redirected to `/rep/shops/{shopId}`
-   (read-only detail) and the list view refreshes.
-6. **On partial failure** (Clerk user created but Postgres insert failed),
+5. **Credentials handoff.** On full success, the action returns the
+   issued `(username, password, loginUrl)` so the client form can
+   render a one-time `<CredentialsCard>` view in place of the form.
+   The card shows the assembled message, a "Sao chép" / "Đã sao chép"
+   button (clipboard write with a textarea fallback), and a top-left
+   "← Xem trang shop" breadcrumb linking to `/rep/shops/{shopId}`. The
+   password is never persisted — the card is the only window the rep
+   has to capture it before navigating away (the form-level state is
+   cleared on unmount / navigation). On the detail page, the same card
+   is reused as the post-reset handoff (see AC #6).
+6. **Password reset.** From `/rep/shops/{shopId}`, the rep sees a
+   bordered "Đặt lại mật khẩu" panel. They must type the shop's
+   `display_name` exactly (trimmed, case-insensitive) to enable the
+   button — a confirmation friction that prevents accidentally
+   invalidating a working password. Submitting the action:
+   (a) requires `publicMetadata.role === 'sales_rep'` server-side
+   (mirrors the layout; layout-only guard does not cover direct POST);
+   (b) looks up the `shop.clerkUserId` and calls
+   `clerkClient.users.updateUser(clerkUserId, { password: newPassword })`
+   where `newPassword` is generated with `core/rep/password-generator`
+   (12 chars from the 56-char safe alphabet, rejection-sampled for
+   cryptographic uniformity — NOT modulo-biased); (c) serializes per-
+   `clerkUserId` so the displayed credentials are always the most
+   recent Clerk write (in-process lock guards the double-click race);
+   (d) returns the new `(username, password, loginUrl)` and the same
+   `<CredentialsCard>` is rendered. The newly generated credentials are
+   ALSO the only window the rep has — the action does not store them.
+7. **On partial failure** (Clerk user created but Postgres insert failed),
    the form renders an inline banner:
    `Đã tạo tài khoản ở Clerk nhưng ghi shop thất bại. Vui lòng thử lại với tên đăng nhập khác hoặc liên hệ kỹ thuật để dọn tài khoản.`
    The rep can retry with a new username; orphan Clerk users surface to
-   ops via Clerk dashboard.
-7. **On full failure** (e.g. Clerk rejects the username as taken), the
+   ops via Clerk dashboard. The boundary metric `rep_shop_create_partial_failure`
+   is emitted (distinct from `rep_shop_create_failed`, which covers
+   Clerk-side rejections).
+8. **On pure Clerk-side failure** (e.g. `createUser` returns
+   `unexpected` or `invalid_input` for an ambiguous code), the form
+   surfaces a generic banner — `Đã xảy ra lỗi khi tạo tài khoản.
+   Vui lòng thử lại sau hoặc liên hệ kỹ thuật nếu lỗi tiếp tục.` —
+   distinct from the partial-failure banner so the rep does not hunt for
+   an orphan to clean up. The boundary metric `rep_shop_create_failed`
+   with reason `shop_write_failed_clerk_upstream` is emitted.
+9. **On full failure** (e.g. Clerk rejects the username as taken), the
    form surfaces a localized error from the `sign-in-error-mapping`
    family adapted to `createUser` errors (`form_username_exists`,
    `form_param_format_invalid`, etc.). No `shop` row is written when
-   `createUser` fails.
-8. `core/rep/` services never import from `@clerk/nextjs` — they take
-   `RepPort` as a parameter (AD-1). Role detection
-   (`publicMetadata.role === 'sales_rep'`) lives in `adapters/clerk/rep.ts`
-   and is the only Clerk-side read.
-9. The `shop` row migration adds `display_name text NOT NULL DEFAULT ''`,
-   `address text NOT NULL DEFAULT ''`, `contact_phone text` (nullable;
-   `NULL` means "not collected at provisioning").
-   The dev seed inserts a non-empty `display_name`; address defaults to
-   empty string; contact phone is left NULL.
-10. Empty-state UX: `/rep/shops` with zero shops shows the standard empty
+   `createUser` fails. Clerk `form_password_*` codes map to
+   `field: 'password'`; `form_username_*` codes map to `field: 'username'`;
+   ambiguous codes default to `'username'`.
+10. `core/rep/` services never import from `@clerk/nextjs` — they take
+    `RepPort` as a parameter (AD-1). Role detection
+    (`publicMetadata.role === 'sales_rep'`) lives in `adapters/clerk/rep.ts`
+    and is the only Clerk-side read.
+11. The `shop` row migration adds `display_name text NOT NULL DEFAULT ''`,
+    `address text NOT NULL DEFAULT ''`, `contact_phone text` (nullable;
+    `NULL` means "not collected at provisioning").
+    The dev seed inserts a non-empty `display_name`; address defaults to
+    empty string; contact phone is left NULL.
+12. Empty-state UX: `/rep/shops` with zero shops shows the standard empty
     state with one primary CTA "Tạo shop đầu tiên" leading to `/rep/shops/new`.
-11. The Story 1.1 `/pending-provisioning` placeholder is **retired** when
+13. The Story 1.1 `/pending-provisioning` placeholder is **retired** when
     Story 1.3 ships (the placeholder existed as a Story 1.1 loop-breaker;
     once every signed-in user lands on either `/catalog` or `/rep/shops`,
     no user is ever authed-without-a-route).
-12. **AD-1 guard** passes — `grep -rE "from '@clerk|from 'drizzle" core/`
+14. **AD-1 guard** passes — `grep -rE "from '@clerk|from 'drizzle" core/`
     returns empty.
-13. **Tests:** new unit tests cover `core/rep/list-shops.ts`,
-    `core/rep/create-shop.ts` (full + partial failure paths), and the
-    adapter shape. `npm test`, `npm run typecheck`, `npm run lint` clean.
+15. **Server-action authorization.** Both `createShopAction` and
+    `resetShopPasswordAction` call `requireSalesRep()` (a server-only
+    helper that redirects to `/catalog` on non-reps) as their first
+    statement, before any port call or schema validation. The `/rep`
+    layout's role guard alone is insufficient because a server action
+    is also an endpoint — a determined caller could POST a valid action
+    payload directly without the layout ever running.
+16. **Runtime validation at the action boundary.** `createShopAction`
+    validates its input against a Zod schema
+    (`createShopActionInputSchema` in
+    `app/rep/shops/new/actions.ts`) before calling the orchestrator.
+    Malformed payloads (missing keys, wrong types) return a structured
+    `{ ok: false; reason: 'invalid_input'; field: 'username' }` rather
+    than throwing — the form cannot have produced this shape, and a
+    direct caller learns only that the payload was wrong.
+17. **Tests:** new unit tests cover `core/rep/list-shops.ts`,
+    `core/rep/create-shop.ts` (full + partial + pure-Clerk-failure paths),
+    `core/rep/reset-shop-password.ts` (incl. concurrent serialization),
+    `core/rep/password-generator.ts` (incl. rejection-sampling for
+    cryptographic uniformity), and the action-layer auth guard.
+    `npm test`, `npm run typecheck`, `npm run lint` clean.
 
 ### Post-shipping adjustment (2026-07-16)
 
@@ -103,6 +161,12 @@ the database (was `NOT NULL DEFAULT ''`). Rationale and propagation:
 
 New tests added: 2 (`contactPhone: null accepted`, `contactPhone: valid
 string passes through`). Test count is now 66 across 9 files.
+
+After the 2026-07-16 review (8 patches applied): +39 new test cases across
+4 new files (`rep-password-generator`, `rep-translate-reason`,
+`rep-action-auth`; extended cases in `rep-create-shop`,
+`rep-error-mapping`, `rep-reset-shop-password`). Test count is now
+105 across 12 files.
 
 ## Out of scope (Story 1.3)
 
@@ -346,13 +410,27 @@ Opus 4.7 (`claude-opus-4-7`) in the Sprint Change Proposal Rev C.
 
 ### Completion Notes List
 
-- All 17 tasks complete; AC #1–#13 satisfied.
-- 64/64 tests pass across 9 files (added 18 new tests, +18 delta vs the
-  Story 1.1 baseline of 46).
+- All 17 tasks complete; AC #1–#16 satisfied (the original 13 + the
+  credentials-handoff, reset, rep-action-auth, and runtime-validation
+  criteria added by the 2026-07-16 review).
+- 105/105 tests pass across 14 files (added 57 new tests total — 18
+  from Story 1.3 baseline, then 39 from the review patches).
 - AD-1 grep guard clean. Typecheck clean. Lint clean.
 - The rep surface ships with the dev seed: signing in with a Clerk dev
   user whose `publicMetadata.role = 'sales_rep'` renders `/rep/shops`;
   signing in with a shop-owner user renders `/catalog`.
+- 2026-07-16 review additions:
+  - `app/rep/auth-guard.ts` + rep-role enforcement on both actions.
+  - Zod schema at `createShopAction` boundary (replaces raw `.trim()`).
+  - Failed-Clerk `field` preserved through the orchestrator (password
+    errors now surface under the password input, not username).
+  - `translateReason` extracted to `translate-reason.ts` and split
+    PARTIAL vs GENERIC banners.
+  - Failure metrics split: orphan-user case → `partial_failure`; pure
+    Clerk rejection → `rep_shop_create_failed` with reason
+    `shop_write_failed_clerk_upstream`.
+  - Per-clerkUserId mutex on `resetShopPassword` (`withResetLock`).
+  - Rejection sampling in `password-generator` instead of modulo bias.
 
 ### File List
 
@@ -373,13 +451,49 @@ Opus 4.7 (`claude-opus-4-7`) in the Sprint Change Proposal Rev C.
 - `app/rep/shops/new/actions.ts` — createShopAction server action.
 - `app/rep/shops/[shopId]/page.tsx` — read-only detail.
 - `tests/rep-list-shops.test.ts` — 3 cases.
-- `tests/rep-create-shop.test.ts` — 8 cases.
-- `tests/rep-error-mapping.test.ts` — 7 cases.
+- `tests/rep-create-shop.test.ts` — 12 cases (incl. unexpected-Clerk and
+  password-field cases from review).
+- `tests/rep-error-mapping.test.ts` — 8 cases (incl. field-disambiguating
+  password codes).
+- `tests/rep-password-generator.test.ts` — 12 cases (incl. rejection-
+  sampling).
+- `tests/rep-reset-shop-password.test.ts` — 8 cases (incl. concurrent
+  serialization).
+- `tests/rep-translate-reason.test.ts` — 7 cases (incl. generic-banner
+  branch).
+- `tests/rep-action-auth.test.ts` — 3 cases (rep-role enforcement +
+  malformed payload validation).
+- `app/rep/auth-guard.ts` — `requireSalesRep()` (server-only).
+- `app/rep/shops/new/translate-reason.ts` — extracted from
+  `NewShopForm.tsx` for testability.
 
 **Modified**
 - `adapters/postgres/schema.ts` — shop table gains 3 columns.
 - `core/shop/shop.ts` — Shop interface extended.
 - `adapters/clerk/auth.ts` — `getCurrentShop` selects the new columns.
+- `adapters/clerk/rep.ts` — `mapCreateUserCode` returns `{ reason, field? }`;
+  propagated through `createClerkUser`.
+- `adapters/clerk/rep-error-mapping.ts` — `mapCreateUserCode` returns
+  `{ reason, field? }` with `form_password_*` mapped to
+  `field: 'password'`.
+- `ports/rep.ts` — `CreateClerkUserResult` adds `field?: 'username' | 'password'`
+  and a dedicated `'unexpected'` reason variant;
+  `CreateShopResult` makes `field`/`partialClerkUserCreated` required
+  per-variant (discriminated-union cleanup).
+- `core/rep/create-shop.ts` — propagates the upstream `field` from Clerk
+  errors; collapses `unexpected` to `shop_write_failed` with
+  `partialClerkUserCreated: false` (no orphan).
+- `core/rep/reset-shop-password.ts` — added per-`clerkUserId` in-process
+  mutex (`withResetLock`) to serialize concurrent resets.
+- `core/rep/password-generator.ts` — replaced modulo sampling with
+  rejection sampling for cryptographic uniformity.
+- `app/rep/shops/new/actions.ts` — added `requireSalesRep()`, Zod
+  schema validation on `unknown` input, and split failure metrics.
+- `app/rep/shops/[shopId]/actions.ts` — added `requireSalesRep()` at
+  the top.
+- `app/rep/shops/new/NewShopForm.tsx` — imports `translateReason` and
+  constants from `translate-reason.ts`; banner copy unchanged
+  (split into PARTIAL vs GENERIC constant).
 - `app/(auth)/login/page.tsx` — authed redirect branches by role.
 - `app/(auth)/login/LoginForm.tsx` — `no_shop_for_user` short-circuits
   to `/rep/shops`.
@@ -392,3 +506,16 @@ Opus 4.7 (`claude-opus-4-7`) in the Sprint Change Proposal Rev C.
 - `app/(auth)/pending-provisioning/page.tsx` (Story 1.1 loop-breaker;
   retired with Story 1.3).
 - `app/(auth)/pending-provisioning/` (empty directory).
+
+### Review Findings
+
+All eight patches from the 2026-07-16 review were applied.
+
+- [x] [Review][Patch] Align Story 1.3 with the approved credentials-handoff and reset workflow [app/rep/shops/new/actions.ts:90-100; app/rep/shops/new/NewShopForm.tsx:158-180] — AC #5 now defines the one-time credentials card (clipboard + textarea fallback + "← Xem trang shop" breadcrumb) and AC #6 covers the reset-password flow (display-name confirmation friction, rep-role enforcement, rejection-sampled password gen, per-clerkUserId serialization, same `<CredentialsCard>` as the post-reset handoff).
+- [x] [Review][Patch] Server actions do not enforce the sales-rep role [app/rep/shops/new/actions.ts:66-88; app/rep/shops/[shopId]/actions.ts:48-63] — added `app/rep/auth-guard.ts` exporting `requireSalesRep()` (server-only, redirects non-reps to `/catalog` mirroring the layout). Both `createShopAction` and `resetShopPasswordAction` call it as their first statement. Verified by `tests/rep-action-auth.test.ts`.
+- [x] [Review][Patch] Unexpected Clerk failures produce no form error [core/rep/create-shop.ts:113-123; app/rep/shops/new/NewShopForm.tsx:65-85] — `core/rep/create-shop.ts` now distinguishes `partialClerkUserCreated: true` (orphan, partial banner) from `partialClerkUserCreated: false` (Clerk rejected, generic banner). `translateReason` (extracted to `app/rep/shops/new/translate-reason.ts`) renders `GENERIC_FAILURE_MESSAGE` for the latter. Covered by `tests/rep-translate-reason.test.ts` and the new `unexpected Clerk error` case in `tests/rep-create-shop.test.ts`.
+- [x] [Review][Patch] Password validation errors are reported against the username field [adapters/clerk/rep-error-mapping.ts:27-30; core/rep/create-shop.ts:120-122] — `mapCreateUserCode` now returns `{ reason, field? }`; `form_password_*` codes map to `field: 'password'`, `form_username_*` codes map to `field: 'username'`, ambiguous codes default to `'username'` in the orchestrator. Verified by `tests/rep-error-mapping.test.ts` (new cases).
+- [x] [Review][Patch] The create server action trusts an unvalidated runtime payload [app/rep/shops/new/actions.ts:66-83] — `createShopAction` now accepts `unknown` and validates against `createShopActionInputSchema` (Zod) before any `.trim()`/property access. Malformed payloads return `{ ok: false; reason: 'invalid_input'; field: 'username' }`. Verified by `tests/rep-action-auth.test.ts`.
+- [x] [Review][Patch] Failure metrics misclassify unexpected Clerk errors [app/rep/shops/new/actions.ts:109-117] — split by `partialClerkUserCreated`: `rep_shop_create_partial_failure` (orphan) vs `rep_shop_create_failed` with `reason: 'shop_write_failed_clerk_upstream'` (no orphan). Other failures retain their original stable reason strings.
+- [x] [Review][Patch] Concurrent password resets can return stale credentials [core/rep/reset-shop-password.ts:45-63; app/rep/shops/[shopId]/actions.ts:60-80] — added an in-process `Map<clerkUserId, Promise>` mutex (`withResetLock`) to `core/rep/reset-shop-password.ts`. Per-clerkUserId serialization; distinct clerkUserIds remain independent. Verified by the new `serializes concurrent resets for the same clerk user id` and `does not serialize resets for distinct clerk user ids` cases in `tests/rep-reset-shop-password.test.ts`. Cross-process races (replicas, lambdas) would need a Postgres advisory lock — out of scope for MVP single-rep-single-server.
+- [x] [Review][Patch] Password generation uses modulo-biased random indices [core/rep/password-generator.ts:46-50] — `generatePassword` now uses rejection sampling: `cutoff = 256 - (256 % alphabetLength)`; bytes ≥ cutoff are discarded and new draws requested. Worst-case rejection rate is < 50%, so 2× byte chunks clear the bar in one or two rounds. `tests/rep-password-generator.test.ts` adds a `rejects bytes at or above the cutoff` case to lock the behavior.

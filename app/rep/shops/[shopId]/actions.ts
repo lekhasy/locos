@@ -24,6 +24,7 @@ import { clerkRepAdapterFactory } from '@/adapters/clerk/rep';
 import { resetShopPassword } from '@/core/rep/reset-shop-password';
 import { DEFAULT_LOCOS_LOGIN_URL } from '@/core/rep/credentials-message';
 import { metric } from '@/adapters/logger';
+import { requireSalesRep } from '@/app/rep/auth-guard';
 
 export type ResetShopPasswordActionInput = {
   shopId: string;
@@ -49,6 +50,8 @@ export type ResetShopPasswordActionResult =
 export async function resetShopPasswordAction(
   input: ResetShopPasswordActionInput,
 ): Promise<ResetShopPasswordActionResult> {
+  await requireSalesRep();
+
   const shop = await postgresShopRepositoryFactory().get(input.shopId);
   if (!shop) {
     metric('rep_password_reset_failed', {

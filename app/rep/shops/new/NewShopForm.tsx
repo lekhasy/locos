@@ -18,12 +18,17 @@
  */
 
 import { useState, useTransition } from 'react';
-import { createShopAction, type CreateShopActionResult } from './actions';
+import { createShopAction } from './actions';
 import { CredentialsCard } from './CredentialsCard';
+import {
+  FIELD_ERROR_MESSAGES,
+  translateReason,
+  type FieldErrorMap,
+} from './translate-reason';
 
 type Field = 'username' | 'password' | 'displayName' | 'address' | 'contactPhone';
 
-type FieldErrorState = Partial<Record<Field, string>>;
+type FieldErrorState = FieldErrorMap;
 
 type Credentials = {
   shopId: string;
@@ -51,40 +56,6 @@ const STEP_1_HELPERS = {
     'Từ 3 đến 32 ký tự, chỉ gồm chữ cái, số, dấu gạch dưới hoặc gạch ngang.',
   password: 'Từ 8 đến 128 ký tự.',
 };
-
-const PARTIAL_FAILURE_MESSAGE =
-  'Đã tạo tài khoản ở Clerk nhưng ghi shop thất bại. Vui lòng thử lại với tên đăng nhập khác hoặc liên hệ kỹ thuật để dọn tài khoản.';
-
-const FIELD_ERROR_MESSAGES: Record<Field, string> = {
-  username: 'Tên đăng nhập không hợp lệ (3–32 ký tự, chỉ chữ cái, số, gạch dưới, gạch ngang).',
-  password: 'Mật khẩu không hợp lệ (8–128 ký tự).',
-  displayName: 'Tên cửa hàng phải có từ 1 đến 80 ký tự.',
-  address: 'Địa chỉ quá dài (tối đa 200 ký tự).',
-  contactPhone: 'Số điện thoại quá dài (tối đa 32 ký tự).',
-};
-
-function translateReason(result: CreateShopActionResult): {
-  partialFailure: string | null;
-  fieldErrors: FieldErrorState;
-} {
-  if (result.ok) return { partialFailure: null, fieldErrors: {} };
-  if (result.reason === 'shop_write_failed' && result.partialClerkUserCreated) {
-    return { partialFailure: PARTIAL_FAILURE_MESSAGE, fieldErrors: {} };
-  }
-  if (result.reason === 'username_taken') {
-    return {
-      partialFailure: null,
-      fieldErrors: { username: 'Tên đăng nhập đã tồn tại.' },
-    };
-  }
-  if (result.reason === 'invalid_input' && result.field) {
-    return {
-      partialFailure: null,
-      fieldErrors: { [result.field]: FIELD_ERROR_MESSAGES[result.field] },
-    };
-  }
-  return { partialFailure: null, fieldErrors: {} };
-}
 
 export function NewShopForm() {
   const [state, setState] = useState<State>({
