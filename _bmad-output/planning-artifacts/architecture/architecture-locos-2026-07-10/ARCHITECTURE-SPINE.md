@@ -7,9 +7,9 @@ paradigm: hexagonal (ports-and-adapters)
 scope: locos Phase 1 — shop-owner posting tool, deployable on a single WSL host
 status: final
 created: 2026-07-10
-updated: 2026-07-10
+updated: 2026-07-16
 binds:
-  - PRD-FR1..FR25
+  - PRD-FR1..FR25, FR-1a
   - PRD-NFR1..NFR8
   - UX-IA surfaces
 sources:
@@ -120,11 +120,11 @@ No parent spine. The PRD binds here as the upstream requirement contract; UX bin
 - **Prevents:** accidentally paying FASHN twice when a user clicks "Regenerate" twice; two parallel regens corrupting a product's image set.
 - **Rule:** every `jobs/RegenerateImageJob` carries a `jobKey = hash(shopId, productId, imageIndex, inputFingerprint)`. Graphile Worker enforces single-instance-on-key via its `job_key` column. Two requests for the same key resolve to the same job, not two concurrent calls.
 
-### AD-7 — Auth boundary: Clerk owns identity via the username+password strategy; locos stores only `clerk_user_id`.
+### AD-7 — Auth boundary: Clerk owns identity via the username+password strategy; locos stores only `clerk_user_id`. **Two identity surfaces share the Clerk boundary: shop_owner (paired with a `shop` row by `clerk_user_id`) and sales_rep (flagged with `publicMetadata.role = 'sales_rep'`). A rep never has a `shop` row; a shop owner never has the rep flag.**
 
-- **Binds:** PRD FR1, FR2, FR3, FR4.
-- **Prevents:** locos shipping any OTP, email-verification, or phone-verification flow that we have to maintain, audit, and harden; the locos DB ever holding passwords, OTP codes, or any auth secret.
-- **Rule:** the `ports/Auth` interface exposes `signIn(identifier, password)`, `getCurrentShop()`, `signOut()`, and `getFacebookPageToken(shopId, pageId)`. The `adapters/Clerk` adapter implements all of them via Clerk's `username` strategy. Locos's `shop` row stores `clerk_user_id` and **never** a password, an OTP code, an email address, or a phone number. No two-step auth UI exists in `/app`; `/login` is a single username + password form. Sales reps provision accounts out-of-band via Clerk dashboard.
+- **Binds:** PRD FR1, FR-1a, FR2, FR3, FR4.
+- **Prevents:** locos shipping any OTP, email-verification, or phone-verification flow that we have to maintain, audit, and harden; the locos DB ever holding passwords, OTP codes, or any auth secret; a public self-service signup path appearing in `/app` under any guise.
+- **Rule:** the `ports/Auth` interface exposes `signIn(identifier, password)`, `getCurrentShop()`, `signOut()`, and `getFacebookPageToken(shopId, pageId)`. The `adapters/Clerk` adapter implements all of them via Clerk's `username` strategy. Locos's `shop` row stores `clerk_user_id` and **never** a password, an OTP code, an email address, or a phone number. No two-step auth UI exists in `/app`; `/login` is a single username + password form. The sales-rep provisioning surface lives at `/rep/shops/*` and is gated by reading `currentUser().publicMetadata.role`; it calls Clerk's `users.createUser` server-API for the new Clerk user and writes the matching `shop` row in the same handler. **No compensating delete on partial failure** — orphan Clerk users are visible to ops via Clerk dashboard and the rep retries with a different username.
 
 ### AD-8 — FB Page access tokens are encrypted-at-rest and revocable.
 
@@ -178,7 +178,7 @@ flowchart LR
 | Authentication on internal calls | Next.js routes check `getCurrentShop()` via Clerk middleware; background worker jobs receive `shopId` as a job argument and re-check via the auth adapter (no silent bypass for scheduled jobs). |
 | Image storage paths | `originals/{shopId}/{sha256}.{ext}` and `generated/{shopId}/{sha256}.{ext}` — shop-namespaced, content-addressable. No directory layout dependent on time. |
 | Counter-metric + success-metric event emission | Every write path logs the events that feed PRD §3 metrics: `shop_login`, `product_created`, `generation_started`, `generation_completed`, `generation_failed`, `regeneration_requested`, `publish_attempted`, `publish_succeeded`, `publish_failed`, `reconnect_required`, `product_sold_out_toggled`. Same `DomainError` logger; never log PII or token bytes. |
-| Account provisioning | **Operator-only.** No self-service signup path exists in application code. A shop row is created only by a locos-team internal tool that takes `clerk_user_id` from an out-of-band provisioning script. Application code never accepts phone numbers or personal data from a public surface for the purpose of account creation. |
+| Account provisioning | **Sales-rep-only via the in-app sales-rep surface.** A Clerk user flagged with `publicMetadata.role = 'sales_rep'` provisions new shop-owner accounts via `/rep/shops/new`; the matching `shop` row is written by the same handler. The locos app never accepts new account data through a public surface — every create flows through the rep. |
 
 ## Stack
 
@@ -190,7 +190,7 @@ flowchart LR
 | Postgres | 17 (Postgres 18 is current; 17 is the conservative choice) |
 | ORM | Drizzle (v0.44 stable / v1.0-beta acceptable) |
 | Job queue | **Graphile Worker** (Postgres-native queue with single-instance-on-key via `job_key`; chosen over the deprecated pg-boss, whose README now redirects here) |
-| Auth (vendor) | Clerk (Next.js SDK) |
+| Auth (vendor) | Clerk (Next.js SDK; `clerkClient.users.createUser` exercised by the sales-rep surface) |
 | SMS provider (vendor) | eSMS.vn (primary, direct VN carrier routes) — Twilio Verify (fallback, behind the same Clerk SMS-provider-config) |
 | AI text | Google AI Studio — **Gemini 3 Pro** |
 | AI image | fal.ai — FASHN v1.6 (`/fashn/tryon/v1.5-or-later`); benchmark against IDM-VTON / Leffa before locking final model |
@@ -206,6 +206,7 @@ flowchart LR
 locos/
   app/                        # Next.js routes (adapter layer at the boundary)
     (auth)/                   # clerk login surface
+    (rep)/                    # sales-rep provisioning surface (FR-1a); gated by publicMetadata.role
     (shop)/
       catalog/page.tsx
       products/
@@ -217,12 +218,14 @@ locos/
       jobs/[jobId]/route.ts    # poll job status
   core/                       # application services + domain (no SDK imports)
     shop/                     # Shop aggregate, provisioning rules
+    rep/                      # Sales-rep domain: list shops, create shop (Clerk user + shop row)
     product/                  # Product aggregate, generation flow, sold-out toggle
     publishing/               # createPost(productId, revisionId) — see AD-3
     catalog/                  # Listing + sold-out filters
     errors.ts                 # DomainError sealed class hierarchy
   ports/                      # interfaces only
     auth.ts
+    rep.ts                    # RepPort for the sales-rep surface (FR-1a)
     storage.ts
     job-queue.ts
     ai-image.ts
@@ -244,7 +247,8 @@ locos/
         regenerate-image.ts
         fb-publish.ts
     clerk/
-      auth.ts                 # implements ports/auth
+      auth.ts                 # implements ports/auth (signIn, getCurrentShop, signOut, getFacebookPageToken)
+      rep.ts                  # implements ports/rep; reads currentUser().publicMetadata.role and calls users.createUser for the rep surface
       sms-config.ts           # eSMS.vn / Twilio Verify wiring (provider-side)
     gemini/
       text-generator.ts
@@ -298,6 +302,7 @@ flowchart TB
 |---|---|---|
 | Phone-OTP login (FR2) | `app/(auth)/*` → `adapters/clerk/auth.ts` → Clerk | AD-1, AD-7 |
 | Shop provisioning (FR1, FR4) | `core/shop/`, `adapters/postgres/repositories/shop-repository.ts` | AD-1, AD-5 |
+| Sales-rep provisioning surface (FR1, FR-1a) | `app/rep/*` → `core/rep/*` → `adapters/clerk/rep.ts` (role detection + `users.createUser`) + `adapters/postgres/repositories/shop-repository.ts` (insert) | AD-1, AD-7, AD-12 |
 | FB Page connection (FR5/FR6/FR7) | `app/(shop)/connect-fb/*` → `adapters/clerk/auth.ts.getFacebookPageToken` | AD-1, AD-7, AD-8 |
 | New product + generation (FR8–FR14) | `app/(shop)/products/new/page.tsx` → `core/product/create-generation-job.ts` → `jobs/generate-product.ts` → `adapters/gemini` + `adapters/fashn` + `adapters/filesystem` + `adapters/postgres` | AD-1, AD-2, AD-4, AD-5, AD-6 |
 | Image regeneration per-image (FR12 + UX Flow 1) | `core/product/regenerate-image.ts` → `jobs/regenerate-image.ts` | AD-2, AD-4, AD-6 |
@@ -316,10 +321,11 @@ flowchart TB
 - **Image CDN at the edge.** Worth it only past Phase 2 scale; local filesystem + signed URL is correct for now.
 - **Multi-region / HA.** Single-WSL-host is the Phase 1 deployment target. HA is a Phase-3 conversation.
 - **Self-hosted auth.** Clerk is currently the third-party boundary; the architecture is **not** locked out of swapping in a self-hosted alternative later (AD-1 + AD-7 keep that option open) — but doing so costs the "don't manage auth yourself" benefit.
-- **OQ4 admin view.** Whether internal team metrics live in this app or external internal tooling — out of scope here; deferred.
+- **OQ4 admin view.** The in-app sales-rep surface (`/rep/shops` list) is the natural admin view for provisioned shops if no separate internal tool is built; closure of OQ4 deferred to Story 1.3 review.
 - **A/B harness for AI text model (Gemini vs GPT-5.5).** Tiny adapter interface allows it but not built.
 - **Sleeve / draping quality regressions** beyond FR10's soft target. Counter-metric CM1/CM2 (PRD §3) is what we watch; no quality gate below that for now.
 - **FB publish reconciliation strategy.** AD-11 surfaces `state='unknown'` rows to ops; the actual reconciliation play (query FB Graph to confirm or refute post existence, then close out the row) is not in the spine. Phase 1 ships with "ops-visible stuck rows + manual intervention"; revisit when stuck-row volume justifies automation.
+- **Sales-rep flag-setter.** Programmatic writer for `publicMetadata.role = 'sales_rep'` is **deferred** — today the flag is set via the Clerk dashboard manually.
 
 ## Open Questions (carried)
 

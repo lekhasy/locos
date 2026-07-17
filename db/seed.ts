@@ -1,15 +1,27 @@
 /**
- * db/seed.ts — dev seed for Story 1.0 AC #5.
+ * db/seed.ts — dev seed for Story 1.0 AC #5 / Story 1.3 (Rev C).
  *
  * Inserts (idempotently):
- *   - one `shop` row linked to a Clerk dev user (placeholder clerk_user_id
- *     — replace after first real Clerk login in dev)
+ *   - one `shop` row linked to a Clerk dev user with a non-empty
+ *     `display_name` so the rep list page renders something out of the
+ *     box. Address and contact_phone stay at the empty-string default.
+ *     (clerk_user_id is a placeholder — replace after first real Clerk
+ *     login in dev)
  *   - one encrypted `page_token` row for a dev Facebook Page
  *   - one sample `product` row with placeholder title/desc/price
  *
- * Story 1.0 places the dev fixtures deterministically. Story 1.3 enforces
- * "provisioned-only" login at the Clerk boundary; seed remains the only
- * way to add a phone number to the provisioned list while running locally.
+ * Story 1.3 / Rev C swaps the Story 1.0 placeholder flow for an in-app
+ * sales-rep surface at `/rep/shops/new`. The dev seed remains a
+ * single-fixture bootstrap for local dev only; production shops are
+ * provisioned through `/rep/shops`.
+ *
+ * To exercise the rep surface locally without a real Clerk user flagged
+ * via dashboard, the simpler path is to sign in with a Clerk dev user you
+ * create in the Clerk dashboard and flip the `DEV_CLERK_USER_ID` constant
+ * below to your `user_xxx` id. To test the sales-rep path specifically,
+ * set `publicMetadata.role = 'sales_rep'` on the user in the Clerk
+ * dashboard; the seed user (`user_dev_clerk_replace_me`) is for the
+ * default shop-owner login flow.
  *
  * Re-runs are no-ops: ON CONFLICT DO NOTHING against deterministic keys.
  */
@@ -54,10 +66,10 @@ async function run() {
     // 1) shop
     const shopId = DEV_SHOP_ID;
     const { rowCount: shopInsert } = await client.query(
-      `INSERT INTO shop (id, clerk_user_id) VALUES ($1, $2)
+      `INSERT INTO shop (id, clerk_user_id, display_name) VALUES ($1, $2, $3)
        ON CONFLICT (clerk_user_id) DO NOTHING
        RETURNING id`,
-      [shopId, DEV_CLERK_USER_ID],
+      [shopId, DEV_CLERK_USER_ID, 'Locos Dev Shop'],
     );
 
     let resolvedShopId = shopId;

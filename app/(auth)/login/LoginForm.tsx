@@ -76,9 +76,14 @@ export function LoginForm() {
       // Persist the side-effects (AR-13: shop_login / login_no_shop_row).
       // recordLoginAction is server-side and reads the just-set session
       // cookie to resolve the current shop — by definition a shop row may
-      // or may not exist for the user. We don't surface "no shop row" to
-      // the user here; that's Story 1.3 territory.
-      await recordLoginAction();
+      // or may not exist for the user. When it doesn't, route directly
+      // to /rep/shops so we avoid a /catalog round-trip (catalog itself
+      // redirects there too — see Story 1.3 / Rep C).
+      const actionResult = await recordLoginAction();
+      if (!actionResult.ok && actionResult.reason === 'no_shop_for_user') {
+        router.replace('/rep/shops');
+        return;
+      }
       router.push('/catalog');
     });
   };

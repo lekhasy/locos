@@ -66,14 +66,14 @@ This document provides the complete epic and story breakdown for locos, decompos
 - **AR-4 — Content-addressable, shop-namespaced storage:** Storage path shape `originals/{shopId}/{sha256}.{ext}` and `generated/{shopId}/{sha256}.{ext}`. Originals immutable; regen inserts a new row, never mutates. Owner-initiated delete = tombstone-on-row.
 - **AR-5 — Multi-tenant from day one:** Every repository method takes `shopId` as a required argument; every Postgres query has `WHERE shop_id = $1`.
 - **AR-6 — Generation job idempotency:** `jobKey = hash(shopId, productId, imageIndex, inputFingerprint)` enforced via Graphile Worker's `job_key` column.
-- **AR-7 — Auth boundary:** Clerk owns identity via the username+password strategy; locos stores only `clerk_user_id`. No passwords, OTP codes, email addresses, or phone numbers are persisted in locos; no two-step auth UI exists in `/app`. Sales reps provision accounts out-of-band via Clerk dashboard.
+- **AR-7 — Auth boundary:** Clerk owns identity via the username+password strategy; locos stores only `clerk_user_id`. No passwords, OTP codes, email addresses, or phone numbers are persisted in locos; no two-step auth UI exists in `/app`. **Two identity surfaces share the Clerk boundary: shop_owner (paired with a `shop` row by `clerk_user_id`) and sales_rep (flagged with `publicMetadata.role = 'sales_rep'`).** Sales reps provision accounts **in-app** at `/rep/shops/new`; the handler calls Clerk `users.createUser` then writes the matching `shop` row. A rep never has a `shop` row; a shop owner never has the rep flag.
 - **AR-8 — Encrypted FB Page tokens:** Stored encrypted-at-rest (libsodium secretbox); caller accesses via callback `withDecryptedToken(shopId, pageId, fn)` — decrypted reference never escapes the closure.
 - **AR-9 — Cross-unit atomic writes:** Multi-row writes visible to another unit (Next.js ↔ worker) execute inside a single Drizzle transaction. Transient third-party failures emit a retry surface (logged event + UI affordance). `publish_succeeded` only after FB API confirms AND locator persisted in same transaction.
 - **AR-10 — Worker-job boundary:** First statement of every worker job handler is `verifyShopActive(shopId)`; exits with `JobError('shop_inactive')` otherwise. Per-job Zod schema for job arguments.
 - **AR-11 — FB publish state machine:** `publish_attempt` row written in `state='pending'` before API call → `succeeded` with post id on success → `failed` on permanent error → `unknown` if API call neither succeeded nor definitively failed. `unknown` rows visible to ops; reconciliation strategy deferred.
-- **AR-12 — Sales-rep-only account provisioning (no self-signup):** The locos app contains no signup surface, no public signup endpoint, no public surface that accepts new accounts. Each shop owner account is created by a sales rep (Clerk user via Clerk dashboard) and the matching locos `shop` row is created out-of-band; the rep hands credentials to the owner via Zalo or in person. *For local dev, the dev seed script creates the dev shop row directly and pairs it with a Clerk dev user.*
+- **AR-12 — Sales-rep-only account provisioning (no self-signup):** The locos app contains no signup surface, no public signup endpoint, no public surface that accepts new accounts. The rep signs in via the FR2 flow, lands on `/rep/shops`, opens `/rep/shops/new`, fills the five fields (username, password, display name, address, contact phone), and submits. The handler calls Clerk `users.createUser` and writes the matching `shop` row bound by `clerk_user_id`. The rep hands the credentials to the owner via Zalo or in person. *For local dev, the dev seed script creates a dev rep user (flagged with the rep role via Clerk dashboard) and a sample shop, paired with a Clerk dev user, so the rep surface renders with one entry on first dev login.*
 - **AR-13 — Counter-metric + success-metric event emission:** Every write path logs the events that feed PRD §3 metrics (`shop_login`, `product_created`, `generation_started`, `generation_completed`, `generation_failed`, `regeneration_requested`, `publish_attempted`, `publish_succeeded`, `publish_failed`, `reconnect_required`, `product_sold_out_toggled`). Never logs PII or token bytes. *Local-only: events log to stdout + local file. Production log scrape is deferred.*
-- **AR-14 — Stack:** Node 24 LTS, Next.js 15.x App Router, Postgres 17, Drizzle, Graphile Worker, Clerk (username+password strategy), Gemini 3 Pro, FASHN v1.6 via fal.ai, Facebook Graph v25.0, local filesystem storage. No SMS provider — no OTP of any kind. *Hosting layer (Caddy TLS, systemd units, host secrets) deferred.*
+- **AR-14 — Stack:** Node 24 LTS, Next.js 15.x App Router, Postgres 17, Drizzle, Graphile Worker, Clerk (username+password strategy; `clerkClient.users.createUser` exercised by the sales-rep surface), Gemini 3 Pro, FASHN v1.6 via fal.ai, Facebook Graph v25.0, local filesystem storage. No SMS provider — no OTP of any kind. *Hosting layer (Caddy TLS, systemd units, host secrets) deferred.*
 
 ### UX Design Requirements
 
@@ -107,10 +107,11 @@ This document provides the complete epic and story breakdown for locos, decompos
 
 ### FR Coverage Map
 
-- FR1: Epic 1 Story 0 — dev seed inserts a shop row (stand-in for the deferred operator provisioning tool)
-- FR2: Epic 1 Story 1 — username + password login via Clerk (sales-rep-provisioned)
+- FR1: Epic 1 Story 3 — in-app sales-rep provisioning surface
+- FR-1a (NEW): Epic 1 Story 3 — rep lists + creates shops (5 fields); both Clerk user and `shop` row bound by `clerk_user_id` in a single handler
+- FR2: Epic 1 Story 1 — username + password login via Clerk
 - FR3: Epic 1 Story 2 — persistent session
-- FR4: Epic 1 Story 3 — provisioned-only enforcement
+- FR4: Epic 1 Story 3 — provisioned-only enforcement (rep surface writes both the Clerk user and the `shop` row, so the bound-row invariant is enforced at create time)
 - FR5: Epic 2 Story 1 — OAuth Page connection
 - FR6: Epic 2 Story 2 — token reuse via `withDecryptedToken`
 - FR7: Epic 2 Story 3 — token expiry + reconnect prompt
@@ -239,20 +240,65 @@ So that I do not have to re-enter my credentials every time I open the app.
 **Then** the next request redirects to `/login`
 **And** logging out from the avatar menu clears the Clerk session immediately
 
-### Story 1.3: Provisioned-only enforcement
+### Story 1.3: In-app sales-rep provisioning
 
-As a locos operator,
-I want only sales-rep-provisioned users to be able to authenticate,
-So that locos remains a closed tool for known customers and never becomes a public signup surface.
+As a sales rep at the locos parent business,
+I want a `/rep/shops` surface where I can see every shop I've provisioned and create a new one — capturing the username and password along with the shop's display name, address, and contact phone,
+So that the shop owner only has to remember a username and password, never does account setup, and I hand them a complete account ready for product work.
 
 **Acceptance Criteria:**
 
-**Given** a Clerk user that exists but is NOT paired with a locos `shop` row matched by `clerk_user_id`
-**When** the user signs in successfully via Clerk's `username` strategy
-**Then** the app does **not** redirect them to `/catalog`
-**And** instead the user lands on `/pending-provisioning` with the message "Tài khoản của bạn chưa được liên kết với shop. Vui lòng liên hệ nhân viên kinh doanh để được hỗ trợ."
-**And** a scan of the app routes reveals NO self-registration form, NO public signup endpoint, and NO public surface that accepts new accounts or shop-bound identifiers
-**And** the only way to pair a Clerk user with a locos shop is by running the dev seed (local) or by the sales rep creating the shop row out-of-band through the internal provisioning script (hosting phase)
+**Given** a Clerk user whose `publicMetadata.role === 'sales_rep'` signs in via `/login`
+**When** the auth surface resolves the role
+**Then** the rep lands on `/rep/shops`, **not** `/catalog`
+**And** a shop owner with no rep flag continues to land on `/catalog`
+**And** the boundary is enforced at the route shell — `/rep/(.*)` is reachable only by reps; anyone else is redirected to `/catalog` (shop owner) or `/login` (unauthenticated).
+
+**Given** the rep opens `/rep/shops`
+**When** the list surface renders
+**Then** every active (non-tombstoned) `shop` row appears, sorted by `created_at DESC`
+**And** each row shows `display_name` and creation date in Vietnamese format
+**And** a "Tạo shop mới" button links to `/rep/shops/new`
+**And** an empty list shows the standard empty state (UX-DR15) with one primary CTA "Tạo shop đầu tiên".
+
+**Given** the rep is on `/rep/shops/new`
+**When** the form renders
+**Then** it is a two-step wizard:
+- **Step 1 — Clerk user:** `Tên đăng nhập` (matching UX-DR7: 3–32 chars, `[a-zA-Z0-9_-]+`) and `Mật khẩu` (matching UX-DR8: 8–128 chars, with a Hiện/Ẩn visibility toggle).
+- **Step 2 — Shop details:** `Tên cửa hàng` (display name, 1–80 chars, required), `Địa chỉ` (address, ≤ 200 chars, optional — empty string accepted), `Số điện thoại liên hệ` (contact phone, ≤ 32 chars, optional — empty string accepted).
+
+**Given** the rep submits the form with valid inputs
+**When** the server action runs
+**Then** `createShopAction` first calls `clerkClient.users.createUser({ username, password })` (Clerk server SDK)
+**And** on `createUser` success, writes the matching `shop` row (`id = cuid2`, `clerk_user_id = clerkUser.id`, `display_name`, `address`, `contact_phone`, `created_at`) bound by `clerk_user_id`
+**And** both writes happen in the same handler; the Postgres insert follows immediately on `createUser` success
+**And** on full success, the rep is redirected to `/rep/shops/{shopId}` and the list view refreshes on next visit.
+
+**Given** `clerkClient.users.createUser` succeeds but the Postgres insert fails (network blip, validation, etc.)
+**When** the rep sees the result
+**Then** the form renders an inline banner: "Đã tạo tài khoản ở Clerk nhưng ghi shop thất bại. Vui lòng thử lại với tên đăng nhập khác hoặc liên hệ kỹ thuật để dọn tài khoản."
+**And** no `shop` row exists; the orphan Clerk user is visible to ops via Clerk dashboard.
+
+**Given** Clerk rejects the create (e.g. `form_username_exists`, `form_param_format_invalid`)
+**When** the rep sees the result
+**Then** the form surfaces a localized error from `adapters/clerk/sign-in-error-mapping.ts` adapted to `createUser` errors
+**And** no `shop` row is written when `createUser` fails.
+
+**Given** the implementation as a whole
+**When** the build is checked
+**Then** `core/rep/` never imports from `@clerk/nextjs` — `RepPort` is injected (AD-1); role detection lives in `adapters/clerk/rep.ts`
+**And** the `shop` table migration adds `display_name text NOT NULL DEFAULT ''`, `address text NOT NULL DEFAULT ''`, `contact_phone text NOT NULL DEFAULT ''`
+**And** the dev seed inserts a non-empty `display_name` for the dev shop
+**And** the AD-1 grep guard passes: `grep -rE "from '@clerk|from 'drizzle" core/` returns empty
+**And** Story 1.1's `/pending-provisioning` placeholder is **retired** in this story's cleanup step (file removed; middleware matcher no longer references it)
+**And** `npm test`, `npm run typecheck`, `npm run lint` are green.
+
+**Out of scope (Story 1.3):**
+
+- Rep edit / disable / archive shops (deferred — no follow-up needed at MVP volume).
+- Programmatic `publicMetadata.role = 'sales_rep'` setter (deferred — today = Clerk dashboard).
+- Rep-side observer views (catalog listings, generation queues). Rep never accesses shop-owner surfaces.
+- OQ4 admin view closure — deferred to Story 1.3 review.
 
 ---
 

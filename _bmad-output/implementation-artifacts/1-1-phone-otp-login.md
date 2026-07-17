@@ -139,13 +139,17 @@ Claude Code session (MiniMax-M3); story context originally drafted by Claude Opu
 - **`finalize()` API surface.** Story plan called for `signIn.__internal_future.finalize({ session: createdSessionId })` to persist the session after `password()`. Clerk v6's `SignInFutureFinalizeParams` is `{ navigate?: SetActiveNavigate }` only — passing `{ session }` is a TS error. **Resolution:** switched to `setActive({ session: createdSessionId })` from the `useSignIn()` hook. This is the canonical path for `useSignIn()` consumers per the `UseSignInReturn` definition (`@clerk/shared/dist/types/index.d.ts:10451`).
 - **Dormant-code pivot.** The original Story 1.1 v3 plan included Task 7 ("keep `PhoneForm.tsx` dormant") and Task 10 ("keep `phoneSchema` helpers dormant"), tracing back to the user's earlier "keep the current code, but not showing it" phrasing about phone OTP. Within the same session, the user pivoted again to "no OTP of any kind." With OTP fully out of scope, "dormant" code has no future story to wait for. Deleted `PhoneForm.tsx`, `tests/phone-schema.test.ts`, the `phoneSchema`/`PhoneInput`/`normalizeVietnamNationalNumber`/`toVietnamE164` exports in `ports/auth.ts`, and the dormant `.phone-input` / `.otp-*` rules in `app/globals.css`. The grep smoke-test (Task 12.2) confirms no module imports them.
 - **Post-review bug: validation failures masked as credential errors.** First manual walkthrough surfaced the issue: typing a username with characters outside `^[a-zA-Z0-9_-]+$` (e.g. an `@`, a pasted email-like identifier) failed `credentialsSchema.safeParse`, but the submit handler set the generic credential message and bailed before calling the port. From the user's perspective "the form returns the wrong-credentials error and never sends a request." **Root cause:** AC #5's "Sai tên đăng nhập hoặc mật khẩu" was being used for two unrelated cases (format rejection and Clerk rejection). **Fix:** extracted `firstValidationMessage(parsed.error)` in `app/(auth)/login/LoginForm.tsx` to surface the first localized Zod issue. The reserved credential message now only appears when Clerk rejects credentials, satisfying AC #5's spirit ("never reveal whether username or password is wrong") while keeping format errors actionable. New unit test `tests/login-form-validation-message.test.ts` locks the contract across 5 cases.
+- **Post-review bug: login ↔ catalog infinite loop on missing shop row.** Second manual walkthrough surfaced a redirect loop: signing in with a Clerk user that has no matching `shop` row made `recordLoginAction` emit `login_no_shop_row`, then `LoginForm` pushed to `/catalog`, where `getCurrentShop()` returned `null` and the page redirected back to `/login`. Middleware saw an authenticated user on `/login` and bounced them back to `/catalog` → loop. **Root cause:** Story 1.1 had no landing target for "authenticated but no shop row" — the original spec deferred this to Story 1.3, which at the time (Rev B) was a placeholder `/pending-provisioning` page, but the deferral leaked into Story 1.1 as a redirect-loop bug. **Fix (forward-port of Story 1.3's surface to break Story 1.1's loop):** added `app/(auth)/pending-provisioning/page.tsx` as a minimal placeholder matching the message in epics §Story 1.3 Rev B AC#3 (`"Tài khoản của bạn chưa được liên kết với shop…"`), added `/pending-provisioning` to the middleware public matcher, changed `app/(shop)/catalog/page.tsx`'s null-shop branch from `redirect('/login')` → `redirect('/pending-provisioning')`, short-circuited `LoginForm` to `router.replace('/pending-provisioning')` when `recordLoginAction` returns `{ ok: false, reason: 'no_shop_for_user' }`, and updated `app/(auth)/login/page.tsx`'s defensive authed-redirect to pick between `/catalog` and `/pending-provisioning` based on shop presence. **Rev C revision (2026-07-16):** Story 1.3 has been fully rewritten around an in-app sales-rep provisioning surface (`/rep/shops/*`). Per Rev C, the `/pending-provisioning` placeholder retires when Story 1.3 ships — see Sprint Change Proposal `2026-07-16 Rev C` §4.5 step 9.
 
 ### Completion Notes List
 
 - **Implementation deviation summary:** two planned items were diverged from, both documented in Debug Log above:
   1. `setActive` instead of `finalize` — Clerk v6 API surface forced this; the call sequence has the same effect (persist the session).
   2. Dormant phone-OTP code was deleted rather than kept — the "no OTP" pivot invalidated the rationale for dormant preservation.
-- **Post-review iteration:** Found and fixed during the first manual walkthrough — see Debug Log "Post-review bug: validation failures masked as credential errors." Adds 5 tests; total now 45 across 6 files.
+- **Post-review iteration:** Two fixes found during manual walkthroughs — see Debug Log:
+  1. Validation failures masked as credential errors (firstValidationMessage helper + tests).
+  2. Authed-but-no-shop loop between `/login` and `/catalog` (`/pending-provisioning` placeholder + redirect target swap + `LoginForm` short-circuit + middleware public-route update). Story 1.3 owns the full surface; this is the loop-breaker.
+  Adds 5 tests; total now 45 across 6 files.
 - **Net file impact:** added `LoginForm.tsx` + `tests/credentials-schema.test.ts` + `tests/login-form-validation-message.test.ts` (3 files); deleted `PhoneForm.tsx` + `OtpForm.tsx` + `tests/phone-schema.test.ts` (3 files); deleted the `otp/` directory; rewrote `ports/sign-in.ts`, `adapters/clerk/sign-in-client.ts`, `adapters/clerk/sign-in-error-mapping.ts`, `ports/auth.ts`, `app/(auth)/login/page.tsx`, `middleware.ts`; trimmed `.phone-input` and `.otp-*` rules from `app/globals.css`; updated `tests/sign-in-error-mapping.test.ts`.
 - **Boundary discipline preserved:** AD-1 hex guard passes (`grep` returns empty). The PasswordMetric code path does NOT log password or username — only stable reason strings and `hasCode` flags. The `metric()` event keys are themselves stable identifiers (`'sign_in_attempted'`, etc.) so future log analysis doesn't need to scrub PII.
 - **Manual smoke-test checklist for the developer with a real Clerk dev app:**
@@ -160,7 +164,8 @@ Claude Code session (MiniMax-M3); story context originally drafted by Claude Opu
 ### File List
 
 **New**
-- `app/(auth)/login/LoginForm.tsx` — username + password client form (Tasks 4, 5.1; updated post-review for separate validation/auth messages).
+- `app/(auth)/login/LoginForm.tsx` — username + password client form (Tasks 4, 5.1; updated post-review for separate validation/auth messages + no-shop short-circuit).
+- `app/(auth)/pending-provisioning/page.tsx` — minimal placeholder for the Story 1.3 surface; forward-ported now to break the authed-no-shop loop (post-review loop-breaker). Retired when Story 1.3 ships the `/rep/shops/new` flow, per Sprint Change Proposal 2026-07-16 Rev C.
 - `tests/credentials-schema.test.ts` — `credentialsSchema` Zod validator tests (Task 11.1).
 - `tests/login-form-validation-message.test.ts` — firstValidationMessage formatting contract; locks that format errors stay distinct from the reserved credential message (post-review fix).
 
@@ -169,8 +174,10 @@ Claude Code session (MiniMax-M3); story context originally drafted by Claude Opu
 - `adapters/clerk/sign-in-client.ts` — `useSignIn` + future `password()` + `setActive` (Tasks 2, debug).
 - `adapters/clerk/sign-in-error-mapping.ts` — username/password reason mapping; `SignInReason` (Task 3).
 - `ports/auth.ts` — phone-related helpers removed; `AuthPort` shape unchanged (Task 10).
-- `app/(auth)/login/page.tsx` — renders `<LoginForm />` instead of `<PhoneForm />` (Task 5).
-- `middleware.ts` — `/login/otp` references removed; `(.*)` matcher pattern kept (Task 9).
+- `app/(auth)/login/page.tsx` — renders `<LoginForm />` instead of `<PhoneForm />`; authed-redirect now branches between `/catalog` and `/pending-provisioning` (Tasks 5, post-review loop-breaker).
+- `app/(auth)/login/LoginForm.tsx` — username + password client form; `firstValidationMessage` helper splits format/auth errors; `recordLoginAction` short-circuit to `/pending-provisioning` (Tasks 4, post-review loop-breaker + validation fix).
+- `app/(shop)/catalog/page.tsx` — null-shop branch redirects to `/pending-provisioning` instead of `/login` (post-review loop-breaker).
+- `middleware.ts` — `/login/otp` references removed; `(.*)` matcher pattern kept; `/pending-provisioning` added to public matcher (Task 9 + post-review loop-breaker).
 - `app/globals.css` — header comment updated; `.phone-input` and `.otp-*` rules removed (post-Task 7 cleanup).
 - `tests/sign-in-error-mapping.test.ts` — username/password mappings (Task 11.2).
 
@@ -187,6 +194,7 @@ Claude Code session (MiniMax-M3); story context originally drafted by Claude Opu
 
 - 2026-07-16 — Story rewritten under Sprint Change Proposal Revision B and implemented: username + password via Clerk `username` strategy; phone-OTP code paths fully removed; AD-1 / AD-7 invariants preserved; 40 tests pass; typecheck and lint clean.
 - 2026-07-16 — Post-review iteration: extracted `firstValidationMessage` so format errors stop masquerading as credential errors. The reserved "Sai tên đăng nhập hoặc mật khẩu" message now means only "Clerk rejected the credentials." Added `tests/login-form-validation-message.test.ts` (5 tests); 45 tests across 6 files pass; typecheck and lint clean. Story remains in `review`.
+- 2026-07-16 — Post-review iteration: broke the `/login` ↔ `/catalog` redirect loop for authenticated Clerk users with no matching `shop` row. Forward-ported the Story 1.3 `/pending-provisioning` surface as a minimal placeholder, updated middleware public routes, swapped the catalog null-shop redirect target, and short-circuited `LoginForm` so users land there directly. 45 tests still pass; typecheck and lint clean. Story remains in `review`; Story 1.3 owns the full surface.
 
 ## Review Findings
 

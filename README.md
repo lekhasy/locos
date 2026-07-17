@@ -65,10 +65,32 @@ the browser sends a username, confirm that **Username** is enabled in the
 Clerk dev app's sign-in identifiers and that the test user has a username set
 on their profile.
 
-Story 1.3 enforces **provisioned-only** login: a Clerk user that isn't paired
-with a locos `shop` row (matched by `clerk_user_id`) lands on
-`/pending-provisioning` instead of `/catalog`. The dev seed is the only way
-to pair a user with a shop while running locally.
+## Sales-rep provisioning (Story 1.3)
+
+Shop owners are provisioned by **sales reps** through an in-app surface at
+`/rep/shops` and `/rep/shops/new` — see Sprint Change Proposal
+`_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-16.md` Rev C.
+A Clerk user is treated as a sales rep when `publicMetadata.role === 'sales_rep'`;
+the rep's sign-in lands on `/rep/shops`, not `/catalog`. A rep creates a new
+shop by filling in five fields (username, password, display name, address,
+contact phone); the handler calls Clerk `users.createUser` first, then writes
+the matching `shop` row bound by `clerk_user_id` in a single transaction.
+
+**For local dev:** the simplest path is the dev-seeded shop-owner flow (top
+of this section). To exercise the rep flow:
+
+1. Open your Clerk dev app → **Users** → add a user with username + password.
+2. On the user's row, click to edit → **public metadata** → set
+   `{"role": "sales_rep"}`.
+3. Sign out of the app and sign in with the rep user → `/rep/shops`.
+4. Use the "Tạo shop mới" button to fill in five fields and create a new
+   shop. The new Clerk user (the shop owner) appears immediately on the
+   shop list.
+
+The rep surface is gated by `app/rep/layout.tsx`; the catalog and the
+rep surface are exclusive — a rep can never browse `/catalog`, and a shop
+owner never sees `/rep/*`. No `/pending-provisioning` route exists; every
+authenticated user has a stable landing target.
 
 ## Where to look for what
 

@@ -25,13 +25,21 @@ import {
 } from 'drizzle-orm/pg-core';
 
 // -----------------------------------------------------------------------------
-// shop — provisioned by the locos team's internal tool (deferred to hosting).
-// In dev: created by db/seed.ts. clerk_user_id is opaque; phone numbers are
-// NEVER stored here (AD-7: Clerk owns identity).
+// shop — provisioned by the in-app sales-rep surface (Story 1.3 / Rev C).
+// In dev: created by db/seed.ts; real creates flow through /rep/shops/new and
+// call Clerk `users.createUser` then write the matching row in the same
+// handler. clerk_user_id is opaque; phone numbers are NEVER stored here
+// (AD-7: Clerk owns identity).
 // -----------------------------------------------------------------------------
 export const shop = pgTable('shop', {
   id: text('id').primaryKey().notNull(),
   clerkUserId: text('clerk_user_id').notNull().unique(),
+  displayName: text('display_name').notNull().default(''),
+  address: text('address').notNull().default(''),
+  // Phone numbers are an "optional at provisioning" field; NULL means
+  // the rep didn't collect one. Do not normalize to '' — the distinction
+  // matters when we surface partial profiles later.
+  contactPhone: text('contact_phone'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }), // tombstone-on-row (AD-4)
 });

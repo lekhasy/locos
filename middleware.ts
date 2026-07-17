@@ -1,17 +1,21 @@
 /**
- * Clerk middleware — Story 1.1 v3 boundary.
+ * Clerk middleware — Story 1.3 / Rev C boundary.
  *
  * AD-7: Clerk owns identity; this is the only place outside `app/layout.tsx`
  * and `adapters/clerk/` that imports Clerk. Everything below reads as:
  *
  *   - Public: /, /login(.*)
- *   - Protected: everything else (catalog, products, connect-fb, …)
+ *   - Protected: everything else (catalog, rep, products, …)
+ *
+ * Role dispatch (rep → /rep/shops vs shop owner → /catalog) happens at
+ * the page level in `app/rep/layout.tsx` and the catalog/login pages.
+ * The middleware itself stays a generic auth gate.
  *
  * Story 1.1 v3 dropped the two-step `/login/otp` route in favor of a
- * single-step username + password flow. The `(.*)` matcher for `/login`
- * still covers any future sub-routes if the team adds them; `isAuthRoute`
- * only matches the bare `/login` path so an authed user landing on the
- * login screen is bounced to /catalog.
+ * single-step username + password flow. The Story 1.3 loop-breaker
+ * (`/pending-provisioning` page) was retired when the rep surface shipped:
+ * every authenticated Clerk user now has a stable landing target
+ * (`/catalog` or `/rep/shops`).
  *
  * Unauthenticated → protected: redirect to /login.
  * Authenticated → /login: redirect to /catalog.

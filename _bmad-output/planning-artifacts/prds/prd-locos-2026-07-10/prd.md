@@ -2,7 +2,7 @@
 title: "PRD: locos"
 status: final
 created: 2026-07-10
-updated: 2026-07-16
+updated: 2026-07-16 (Rev C — sales-rep provisioning moved in-app, FR-1a added)
 ---
 
 # PRD: locos — Phase 1 (Shop-Owner Posting Tool)
@@ -44,7 +44,7 @@ Deferred (Phase 2): whether locos drives buyers to shops — not measurable in P
 
 **Primary (and only Phase-1) user — the shop owner.** A wide variety of independent HCMC fashion shops, typically not big chains; small operators who already sell through their Facebook fanpage and feel the content-creation grind. Mobile-first, but also use desktop. Vietnamese-speaking.
 
-Accounts are **provisioned manually** by the locos team (these are known customers of the parent business). There is no public self-service signup.
+Accounts are **provisioned by sales reps** through the in-app sales-rep surface (FR-1a). Each rep creates a shop-owner account — username + temporary password + shop details — and hands the credentials to the owner out-of-band. The shop owner never deals with account setup; the only thing they receive is a username and password. There is no public self-service signup.
 
 ### User Journey UJ-1 — Publishing a new product
 
@@ -80,7 +80,8 @@ Chi runs a small dress shop in District 3. A new batch of linen dresses arrived 
 ## 6. Functional Requirements
 
 ### 6.1 Authentication & Accounts
-- **FR1.** The locos team can manually create a shop account; there is no public self-service signup.
+- **FR1.** A sales rep creates a shop account in-app via the sales-rep surface (FR-1a). There is no public self-service signup.
+- **FR-1a.** The sales-rep surface lists every provisioned shop and lets the rep create a new one. A create captures five fields — username, password, display name, address, contact phone — writes a Clerk user first via Clerk's `users.createUser` server-API, then writes the matching `shop` row bound by `clerk_user_id`. Both writes happen in the same handler. Sales-rep identity is a Clerk user with `publicMetadata.role = 'sales_rep'`; a rep never has a `shop` row.
 - **FR2.** A shop owner logs in by entering a username and password (assigned out-of-band by the locos sales rep). There is no OTP, no email verification, and no phone verification.
 - **FR3.** A successful login establishes a persistent session so the owner is not forced to re-authenticate on every visit. `[ASSUMPTION: session stays valid for ~30 days of inactivity before re-auth is required; exact TTL to confirm.]`
 - **FR4.** Only accounts provisioned by the locos team can authenticate; an unknown username cannot log in, and there is no self-register path. Every Clerk user maps to exactly one row in the locos `shop` table by `clerk_user_id`.
@@ -130,13 +131,14 @@ Chi runs a small dress shop in District 3. A new batch of linen dresses arrived 
 - **Facebook Graph API** access to post to Pages, including whatever app review / permissions (e.g., page management + content publishing) are required. This is an external gate that could affect timeline. `[ASSUMPTION: Facebook app approval is obtainable for this use case.]`
 - **Clerk** identity service (free tier supports the username+password strategy used here; no email/phone verification is invoked).
 - **AI generation capability** for both Vietnamese marketing text and product-on-model imagery (provider/model choice is an architecture decision, not fixed here).
-- **Manual account-provisioning process** owned by the locos/parent-business team — sales rep creates each shop owner a Clerk user with a temp password and hands credentials out-of-band.
+- **Manual account-provisioning process** owned by the locos/parent-business team, surfaced in-app as FR-1a. Sales rep signs in via Clerk username+password (FR2), lands on `/rep/shops`, opens `/rep/shops/new`, fills in the five fields, and submits. The handler calls Clerk `users.createUser` then writes the matching `shop` row. The rep hands the credentials to the shop owner out-of-band (in person or via Zalo).
 
 **Key Phase-1 risks (named so they aren't silent):**
 - **Facebook app review delay or rejection** — pushes the entire FB-posting path. Mitigation: keep the locos catalog publishable without Facebook, so the tool still has standalone value while awaiting approval.
 - **AI provider outage or quality regression** — breaks the core generation flow. Mitigation: keep generations observable and retryable; regenerate is already the explicit UX.
 - **Vietnamese-text or on-model image quality does not clear the "good enough to publish" bar** — would show up as elevated CM1/CM2. Already instrumented via the counter-metrics.
 - **Password handoff between sales rep and shop owner is an operational reality** — credentials flow out-of-band. Mitigation: documented secure-handling guidance in RUNBOOK; rep can issue a new temp password at any time.
+- **Sales-rep Clerk identities need `publicMetadata.role = 'sales_rep'` set via Clerk dashboard** before the rep can sign in to `/rep`. Today this is a manual operator step; programmatic flag-setter is **deferred**.
 - **Facebook Graph API breaking changes** — would surface as CM3 step changes; resilience built in via NFR6.
 
 ## 9. Open Questions

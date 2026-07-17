@@ -2,19 +2,29 @@ import { UserButton } from '@clerk/nextjs';
 import { redirect } from 'next/navigation';
 import { clerkAuthAdapterFactory } from '@/adapters/clerk/auth';
 import { getCurrentShop } from '@/core/shop/get-current-shop';
+import { isSalesRep } from '@/adapters/clerk/rep';
 
 /**
- * /catalog — placeholder for the post-login landing (Story 1.1).
+ * /catalog — shop owner landing (Story 1.1 + Story 1.3 routing).
  *
- * Story 5.1 implements the full product-card grid. Story 1.1 just needs a
- * safe surface so the login flow has somewhere to land; the avatar menu
- * uses Clerk's UserButton for now (Story 1.2 wires the spec'd menu).
+ * Story 1.3 / Rev C role dispatch:
+ *   - Rep users have no `shop` row by design (AD-7 sister clause), so the
+ *     null-shop branch sends them to `/rep/shops`.
+ *   - Any other authenticated user with no `shop` row also lands on
+ *     `/rep/shops` (defense in depth — every authenticated user must have
+ *     a stable route target; the rep surface is the natural home for
+ *     "authed but no `shop` row" once Story 1.3 ships).
  */
 export default async function CatalogPage() {
+  const isRep = await isSalesRep();
   const shop = await getCurrentShop(clerkAuthAdapterFactory());
-  if (!shop) redirect('/login');
+  if (!shop) {
+    redirect('/rep/shops');
+  }
 
-  const shopTail = shop.id.slice(-6);
+  // Narrow for the type system after the redirect.
+  void isRep;
+  const tail = shop.id.slice(-6);
 
   return (
     <main className="auth-shell">
@@ -29,7 +39,7 @@ export default async function CatalogPage() {
         >
           <div>
             <h1 style={{ marginBottom: 'var(--space-1)' }}>Danh mục sản phẩm</h1>
-            <p className="helper">Xin chào, cửa hàng {shopTail}.</p>
+            <p className="helper">Xin chào, cửa hàng {tail}.</p>
           </div>
           <UserButton afterSignOutUrl="/login" />
         </header>

@@ -31,6 +31,9 @@ export class ClerkAuthAdapter implements AuthPort {
       .select({
         id: shop.id,
         clerkUserId: shop.clerkUserId,
+        displayName: shop.displayName,
+        address: shop.address,
+        contactPhone: shop.contactPhone,
         createdAt: shop.createdAt,
       })
       .from(shop)
